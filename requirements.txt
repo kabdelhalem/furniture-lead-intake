@@ -5,3 +5,4 @@ reportlab>=4.0
 ezdxf>=1.1
 Pillow>=10.0
 pdfplumber>=0.11
+langgraph>=1.0
