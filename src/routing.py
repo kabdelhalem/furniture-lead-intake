@@ -20,8 +20,8 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from src.catalog import by_sku
-from src.schema import CanonicalLead
+from .catalog import by_sku
+from .schema import CanonicalLead
 
 # --------------------------------------------------------------------------
 # Tunables — plain constants, not config. Documented so the thresholds are
