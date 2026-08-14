@@ -35,10 +35,12 @@ near-ties (the `MER-CT-*` case) is damped down into the review band.
     NO MATCH        (raw < RAW_FLOOR)  sku is None
 
 Width-resolved matches (e.g. a bare "height-adjustable desk" pinned to a size
-only by `width_in`) are intentionally left at *moderate* confidence rather than
-promoted into the high band: the text alone is weak, and L008 in the corpus
-exists precisely to punish silently snapping 1800mm to the 72" SKU as if it were
-certain.
+only by `width_in`) score in the low-to-mid 0.6s — above this module's own
+HIGH_CONFIDENCE line, but deliberately well under the schema's `matched_sku`
+review threshold (0.90), so they still land in the review queue rather than
+auto-committing. The width nudge disambiguates *which* size without asserting
+certainty: L008 exists precisely to punish silently snapping 1800mm to the 72"
+SKU as if it were sure.
 
 Stdlib only — `difflib` powers the fuzzy token-equality fallback, so no
 dependency is added.
