@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Virtualenv
+.venv/
+venv/
+
+# Secrets — never commit an API key
+.env
+.env.*
+!.env.example
+
+# Generated corpus (pure function of src/corpus/specs.py — regenerate, don't commit).
+# Anchored to repo root so it does NOT match src/corpus/ (the generator source).
+/corpus/
+
+# Node / UI (added when the UI lands)
+node_modules/
+dist/
+.vite/
+
+# OS
+.DS_Store
