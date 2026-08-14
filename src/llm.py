@@ -157,11 +157,18 @@ class LLM:
         user: str,
         max_tokens: int = 4096,
         schema: dict[str, Any] | None = None,
+        documents: list[dict[str, str]] | None = None,
     ) -> LLMResult:
-        """One request/response. `schema`, if given, constrains the output to
-        that JSON Schema via structured outputs (supported on both tiers)."""
+        """One request/response.
+
+        `schema`, if given, constrains the output to that JSON Schema via
+        structured outputs. `documents` is a list of {media_type, data_b64}
+        dicts (e.g. a scanned PDF) placed before the text — the OCR path for a
+        scanned artifact sends the raw bytes to a vision-capable model here
+        rather than shelling out to a local OCR engine.
+        """
         model = TIER_MODELS[tier]
-        request = self._build_request(model, system, user, max_tokens, schema)
+        request = self._build_request(model, system, user, max_tokens, schema, documents)
         key = _request_key(request)
 
         cached = None if self.mode is LLMMode.LIVE else self._read_cache(key)
@@ -213,12 +220,22 @@ class LLM:
         user: str,
         max_tokens: int,
         schema: dict[str, Any] | None,
+        documents: list[dict[str, str]] | None = None,
     ) -> dict[str, Any]:
+        if documents:
+            content: Any = [
+                {"type": "document",
+                 "source": {"type": "base64", "media_type": d["media_type"], "data": d["data_b64"]}}
+                for d in documents
+            ]
+            content.append({"type": "text", "text": user})
+        else:
+            content = user
         request: dict[str, Any] = {
             "model": model,
             "max_tokens": max_tokens,
             "system": system,
-            "messages": [{"role": "user", "content": user}],
+            "messages": [{"role": "user", "content": content}],
         }
         if schema is not None:
             request["output_config"] = {
