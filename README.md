@@ -7,75 +7,85 @@ one into a quote. This project collapses all of that heterogeneous inbound into
 provenance** — so a human reviewer only touches the fields the system is unsure
 about, not the whole record.
 
-This repo is the foundation layer: the frozen schema and a synthetic,
-ground-truth-first corpus that the extraction pipeline and eval harness are
-built against.
+## How it works
 
-1. **`src/schema.py`** — the canonical lead shape. Every field is an
-   `Extracted[T]` envelope carrying a value, a confidence, provenance
-   (`evidence`), and a review status.
-2. **`src/corpus/`** — 15 ground-truth-first lead fixtures that render into 20
-   messy artifacts across 6 formats.
+```
+ingest ─▶ extract ─▶ assemble ─▶ route ─▶ review
+(6 fmts)  (LLM)      (typing +           (rules)   (human-in-the-loop,
+                     matching +                     interrupt/resume)
+                     confidence)
+```
+
+- **Ingest** (`src/ingest.py`) — every format becomes a uniform `IngestedArtifact`
+  with located blocks (`Sheet1!C14`, `body line 7`) so each value can cite where
+  it came from. A scanned fax with no text layer takes the vision path.
+- **Extract** (`src/extract.py`) — a cheap, fast model *reads and locates* only.
+  It copies values verbatim (no unit conversion, no SKU guessing) and rates its
+  own certainty. A stronger model runs only to reconcile leads whose evidence
+  spans multiple conflicting artifacts.
+- **Assemble** (`src/assemble.py`) — the deterministic half: type the values
+  (units, dates, phones, money), fuzzy-match SKUs against the catalog, and score
+  **per-field confidence** by folding the model's self-report together with
+  deterministic signals (`src/confidence.py`).
+- **Route** (`src/routing.py`) — plain rules, no model. Every rule that fires is
+  logged.
+- **Review** — a real LangGraph `interrupt`/`resume`: a lead with flagged fields
+  pauses for a reviewer and resumes with their corrections applied.
+
+Every model call goes through one wrapper (`src/llm.py`) that records tokens,
+cost, latency, and model tier, and caches responses to disk — so the eval
+replays offline with no API key.
 
 ## Quickstart
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-python -m src.corpus.generate --out ./corpus
+make install          # dependencies
+make corpus           # generate the synthetic corpus from specs.py
+make test             # 220+ tests, all offline
+
+# Record model responses once (needs ANTHROPIC_API_KEY), then score offline:
+make record           # live calls -> writes cache/llm/  (commit it)
+make eval             # replays the cache, scores against ground truth
 ```
 
-Output:
-
-```
-corpus/inbox/          20 artifacts — .eml, .pdf (text + scanned), .xlsx, .dxf, .txt
-corpus/ground_truth/   15 JSON files, dotted-path -> expected value
-corpus/manifest.json   index + failure-mode coverage map
-```
-
-Current: **15 leads · 20 artifacts · 242 labelled fields · 11 expected-uncertain fields**.
-
-> `corpus/` is generated and git-ignored. `src/corpus/specs.py` is the source of
-> truth; regenerate the artifacts rather than hand-editing anything under
-> `corpus/`. Developed on Python 3.14; the schema targets 3.11+.
+`make eval` runs the pipeline over all 15 leads and prints field accuracy, a
+calibration pass-rate, the L011/L013 gates, and the run's token/cost total. It
+exits non-zero on a gate failure — a real CI-style check once the cache is
+recorded.
 
 ## Three design decisions worth understanding
 
 **Ground truth is authored first; artifacts are derived from it.** The normal way
 a synthetic eval set dies is: generate plausible documents, then hand-label them
 — which bakes the same misreadings into the labels that the extractor will make.
-Going truth-first makes the labels correct by construction. It's the single most
-important property of the corpus.
+Going truth-first (`src/corpus/specs.py`) makes the labels correct by
+construction.
 
 **Confidence is per-field, and thresholds are per field *class*.** Getting a
 contact email wrong is unrecoverable — the quote goes to the wrong inbox. Getting
 a finish wrong is caught downstream by the rep. So `primary_contact.email` sits at
-0.95 and `finish` sits at 0.65. See `THRESHOLDS` in `schema.py`. Moving a
-threshold grows or shrinks the review queue — the queue is tunable, not
-hardcoded.
+0.95 and `finish` sits at 0.65 (`THRESHOLDS` in `schema.py`). Move a threshold and
+the review queue grows or shrinks — it's tunable, not hardcoded.
 
-**`apply_policy()` is the only place that decides what a human sees.** Keeping it
-a pure function of confidence is what lets the review queue stay tunable rather
-than hardcoded.
-
-Note the denominator subtlety in `apply_policy`: absent *optional* fields are
-excluded from the auto-commit rate, because a field nobody asked for isn't a
-decision the system made. Absent *required* fields do count, and do cost a
-reviewer. Left naive, this metric reads 16% instead of 78% and understates the
-system.
+**`apply_policy()` is the only place that decides what a human sees.** Keeping it a
+pure function of confidence is what lets the review queue stay tunable. Note the
+denominator subtlety: absent *optional* fields are excluded from the auto-commit
+rate (a field nobody asked for isn't a decision the system made), while absent
+*required* fields count and cost a reviewer.
 
 ## What the corpus deliberately tests
 
-Every fixture exists to catch one named failure mode; `manifest.json` has the
-full map. The ones that carry the most weight:
+Each fixture catches one named failure mode (`corpus/manifest.json` has the full
+map). The ones that carry the most weight:
 
 | Lead | Failure mode |
 |---|---|
 | L002 | Forwarded thread, three superseded scopes — naive extraction grabs the dead numbers |
 | L003 | Header on row 7 under a merged title, `"14 ea"` quantities, a subtotal row masquerading as a line item |
-| L004 | Scanned fax, **no text layer** — `pdfplumber` returns `""`, forcing the OCR branch |
+| L004 | Scanned fax, **no text layer** — `pdfplumber` returns `""`, forcing the vision path |
 | L006 | Phone transcript: `"four, maybe five"`, `"ten foot"` → 120in, chairs stated per-table |
-| L007 | `"the big walnut one"` maps to 3 SKUs — correct behavior is flag + alternatives, **not** a guess |
+| L007 | `"the big walnut one"` maps to 3 SKUs — correct behavior is decline + alternatives, **not** a guess |
 | L008 | Metric throughout; 1800mm = 70.87in must not silently snap to the 72" SKU |
 | L009 | Sender is an EA; the decision maker is someone else in the body |
 | L011 | Quantity stated nowhere — the only correct answer is `null`, any number is a hard fail |
@@ -85,24 +95,29 @@ full map. The ones that carry the most weight:
 L011 and L013 matter most: a system that declines to answer is a stronger signal
 than one that answers everything.
 
-## What this deliberately does not do
+## Layout
 
-- **No DXF geometry parsing.** Text and DIMENSION entities only. Fabricators put
-  the numbers in the annotation layer; chasing geometry is a lot of work for
-  marginal recall.
-- **No real IMAP.** The demo gets a "simulate inbox" button.
-- **No pricing engine.** 30-SKU stub catalog in `src/catalog.py`, with deliberate
-  near-collisions (`MER-CT-96` / `MER-CT-120`, the `ASH-TSK-*` family) so fuzzy
-  matching produces genuinely low-confidence results rather than manufactured ones.
+```
+src/
+  schema.py       canonical CanonicalLead shape + apply_policy + thresholds
+  catalog.py      30-SKU stub catalog with deliberate near-collisions
+  ingest.py       6 format loaders -> IngestedArtifact
+  llm.py          the one model-call wrapper (tiers, cost, replay cache)
+  extract.py      LLM read -> ExtractionResult   (+ extract_types.py contract)
+  normalize.py    mm->in, dates, money, phones
+  matching.py     fuzzy SKU matcher + per-match confidence
+  confidence.py   per-field confidence from model + deterministic signals
+  assemble.py     ExtractionResult -> typed, scored CanonicalLead
+  routing.py      deterministic rules
+  pipeline.py     LangGraph graph with the human-review interrupt/resume
+  eval.py         field accuracy + calibration + gates
+  run_corpus.py   drive the pipeline over the corpus and score it
+  corpus/         ground-truth-first fixtures (specs.py) + renderers
+```
 
-## Architecture
+## Scope boundaries — deliberately out of scope
 
-The schema is the contract. Three tracks build on it:
-
-1. **Extraction** — classifier → per-format extractors → normalizer → SKU matcher → confidence scorer, orchestrated as a LangGraph pipeline with a real human-review interrupt/resume.
-2. **Eval** — flatten predicted vs. truth via `flatten_values()`, field-level accuracy plus a calibration check against `expect_low_confidence`.
-3. **UI** — review queue driven by `review.flagged_paths`, dashboard, ROI panel.
-
-All model calls run through one wrapper (`src/llm.py`) that records tokens, cost,
-latency, and model tier, and caches responses to disk so the eval replays
-offline with no API key.
+No real IMAP (a "simulate inbox" button is the demo affordance). No pricing engine
+beyond the stub catalog. No DXF geometry parsing — annotation layer only. No
+multi-tenancy, no auth beyond a hardcoded reviewer. These are cut on purpose to
+keep the focus on the extraction and confidence layer.
