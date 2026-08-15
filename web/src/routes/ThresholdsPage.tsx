@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
-import type { ThresholdResult } from "../types";
+import type { ConfidenceLevel, ThresholdResult } from "../types";
+import { CONFIDENCE_ORDER, levelLabel, rank } from "../lib/confidence";
 import { ErrorNote, Spinner } from "../components/ui";
 import { useToast } from "../components/Toast";
 
@@ -24,9 +25,9 @@ const SLIDERS: { path: string; label: string; blurb: string }[] = [
     blurb: "Fuzzy catalog match; expensive to get wrong.",
   },
   {
-    path: "customer.company_name",
-    label: "Company name",
-    blurb: "Identity field — needs to be right to route.",
+    path: "customer.customer_type",
+    label: "Customer type",
+    blurb: "Dealer vs. designer vs. end customer — drives segment and pricing.",
   },
   {
     path: "is_lead",
@@ -48,18 +49,19 @@ export default function ThresholdsPage() {
   // the reviewer has moved a slider.
   const dashQ = useQuery({ queryKey: ["dashboard"], queryFn: () => api.dashboard() });
 
-  const [values, setValues] = useState<Record<string, number>>({});
+  const [values, setValues] = useState<Record<string, ConfidenceLevel>>({});
   const [lastResult, setLastResult] = useState<ThresholdResult | null>(null);
 
   // Seed local slider state once the server values arrive (and after a reset).
   useEffect(() => {
     if (thrQ.data) {
-      setValues(Object.fromEntries(SLIDERS.map((s) => [s.path, thrQ.data[s.path] ?? 0.8])));
+      const data = thrQ.data;
+      setValues(Object.fromEntries(SLIDERS.map((s) => [s.path, data[s.path] ?? "high"])));
     }
   }, [thrQ.data]);
 
   const put = useMutation({
-    mutationFn: (payload: { overrides?: Record<string, number> } | { reset: true }) =>
+    mutationFn: (payload: { overrides?: Record<string, ConfidenceLevel> } | { reset: true }) =>
       api.putThresholds(payload),
     onSuccess: (r) => {
       setLastResult(r);
@@ -78,7 +80,7 @@ export default function ThresholdsPage() {
       }),
   });
 
-  const commit = (next: Record<string, number>) => put.mutate({ overrides: next });
+  const commit = (next: Record<string, ConfidenceLevel>) => put.mutate({ overrides: next });
 
   const onReset = () => {
     put.mutate(
@@ -158,34 +160,45 @@ export default function ThresholdsPage() {
         </p>
       </div>
 
-      {/* sliders */}
+      {/* sliders — five ordinal stops: Severe · Low · Medium · High · Certain */}
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         {SLIDERS.map((s) => {
-          const v = values[s.path] ?? 0.8;
+          const v = values[s.path] ?? "high";
+          const idx = rank(v);
           return (
             <div key={s.path} className="card p-4">
               <div className="flex items-baseline justify-between gap-2">
                 <label htmlFor={s.path} className="text-sm font-medium text-ink">
                   {s.label}
                 </label>
-                <span className="font-mono text-sm font-bold tabular-nums text-brand-deep">
-                  {Math.round(v * 100)}%
+                <span className="rounded-full border border-brand/30 bg-brand-tint px-2.5 py-0.5 font-mono text-2xs font-bold uppercase tracking-[0.08em] text-brand-deep">
+                  ≥ {levelLabel(v)}
                 </span>
               </div>
               <p className="mt-0.5 font-mono text-[10px] text-ink-faint">{s.path}</p>
               <input
                 id={s.path}
                 type="range"
-                min={0.5}
-                max={0.99}
-                step={0.01}
-                value={v}
-                onChange={(e) => setValues((prev) => ({ ...prev, [s.path]: Number(e.target.value) }))}
+                min={0}
+                max={CONFIDENCE_ORDER.length - 1}
+                step={1}
+                value={idx}
+                onChange={(e) =>
+                  setValues((prev) => ({ ...prev, [s.path]: CONFIDENCE_ORDER[Number(e.target.value)] }))
+                }
                 onPointerUp={() => commit({ ...values })}
                 onKeyUp={() => commit({ ...values })}
                 className="mt-3 w-full accent-brand"
                 disabled={put.isPending}
+                aria-valuetext={levelLabel(v)}
               />
+              <div className="mt-1 flex justify-between font-mono text-[10px] text-ink-faint">
+                {CONFIDENCE_ORDER.map((lvl) => (
+                  <span key={lvl} className={lvl === v ? "font-bold text-brand-deep" : ""}>
+                    {levelLabel(lvl).slice(0, 3)}
+                  </span>
+                ))}
+              </div>
               <p className="mt-2 text-xs leading-snug text-ink-soft">{s.blurb}</p>
             </div>
           );

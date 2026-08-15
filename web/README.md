@@ -9,14 +9,16 @@ Four views:
 - **Queue** — inbound leads, highest priority first. Flagged leads carry an amber
   edge; each row shows segment, priority, auto-commit rate, and review status.
   Seed the demo corpus or simulate a single inbound from the toolbar.
-- **Lead detail** — the canonical record, every field colored by status and
-  plotted on a confidence rail against the threshold for its class. Flagged
-  fields surface first under **Needs your eye**; expand any field for its
+- **Lead detail** — the canonical record. Confidence is an ordinal level
+  (Severe · Low · Medium · High · Certain), so each field's rail is a five-cell
+  ladder with a tick at the minimum level its class must reach to auto-commit.
+  `Severe` reads as an alarm (a cross-artifact conflict or hallucination risk).
+  Flagged fields surface first under **Needs your eye**; expand any field for its
   evidence ("show me why"), and confirm or correct it inline. A flagged SKU
   offers its runner-up matches as a picker.
 - **Dashboard** — the auto-commit rate as the hero, reviewer time saved as the
   ROI, plus cost, queue size, and the leads-vs-not-leads split.
-- **Thresholds** — sliders for the field classes that move the queue. Each change
+- **Thresholds** — a slider per field class over the five levels. Each change
   re-runs the policy server-side and the queue count resizes live.
 
 ## Run it

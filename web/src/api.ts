@@ -1,5 +1,6 @@
 import type {
   CanonicalLead,
+  ConfidenceLevel,
   Dashboard,
   LeadSummary,
   ReviewDecision,
@@ -73,9 +74,11 @@ export const api = {
 
   dashboard: () => request<Dashboard>("/dashboard"),
 
-  thresholds: () => request<Record<string, number>>("/thresholds"),
+  thresholds: () => request<Record<string, ConfidenceLevel>>("/thresholds"),
 
-  putThresholds: (payload: { overrides?: Record<string, number> } | { reset: true }) =>
+  putThresholds: (
+    payload: { overrides?: Record<string, ConfidenceLevel> } | { reset: true },
+  ) =>
     request<ThresholdResult>("/thresholds", {
       method: "PUT",
       body: JSON.stringify(payload),

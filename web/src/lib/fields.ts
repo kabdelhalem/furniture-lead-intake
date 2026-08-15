@@ -1,4 +1,10 @@
-import type { CanonicalLead, Contact, Extracted, FieldStatus } from "../types";
+import type {
+  CanonicalLead,
+  ConfidenceLevel,
+  Contact,
+  Extracted,
+  FieldStatus,
+} from "../types";
 
 // A flattened, display-ready field: the envelope plus everything the row and the
 // confidence rail need. `path` matches the backend's iter_extracted format
@@ -10,7 +16,7 @@ export interface FieldRow {
   path: string;
   label: string;
   field: Extracted;
-  threshold: number;
+  threshold: ConfidenceLevel;
   kind: FieldKind;
 }
 
@@ -44,20 +50,20 @@ export interface FieldGroup {
 
 // Mirror of schema.threshold_for: collapse [3] -> [] then fall back to _default.
 // The tick on the confidence rail depends on this being the same transform, or
-// every line-item field would show the 0.80 default instead of its real class.
+// every line-item field would show the default level instead of its real class.
 export function thresholdFor(
   path: string,
-  thresholds: Record<string, number>,
-): number {
+  thresholds: Record<string, ConfidenceLevel>,
+): ConfidenceLevel {
   const generic = path.replace(/\[\d+\]/g, "[]");
-  return thresholds[generic] ?? thresholds["_default"] ?? 0.8;
+  return thresholds[generic] ?? thresholds["_default"] ?? "high";
 }
 
 function row(
   path: string,
   label: string,
   field: Extracted,
-  thresholds: Record<string, number>,
+  thresholds: Record<string, ConfidenceLevel>,
 ): FieldRow {
   return { path, label, field, threshold: thresholdFor(path, thresholds), kind: kindFor(path) };
 }
@@ -65,7 +71,7 @@ function row(
 function contactRows(
   prefix: string,
   c: Contact,
-  thresholds: Record<string, number>,
+  thresholds: Record<string, ConfidenceLevel>,
 ): FieldRow[] {
   return [
     row(`${prefix}.full_name`, "Contact name", c.full_name, thresholds),
@@ -79,7 +85,7 @@ function contactRows(
 /** Non-line-item groups, in reading order. */
 export function coreGroups(
   lead: CanonicalLead,
-  thresholds: Record<string, number>,
+  thresholds: Record<string, ConfidenceLevel>,
 ): FieldGroup[] {
   const t = thresholds;
   const c = lead.customer;
@@ -126,7 +132,7 @@ export function coreGroups(
 export function lineItemRows(
   lead: CanonicalLead,
   index: number,
-  thresholds: Record<string, number>,
+  thresholds: Record<string, ConfidenceLevel>,
 ): FieldRow[] {
   const li = lead.line_items[index];
   const base = `line_items[${index}]`;

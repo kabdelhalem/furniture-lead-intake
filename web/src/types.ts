@@ -11,6 +11,11 @@ export type FieldStatus =
   | "human_confirmed"
   | "not_found";
 
+// Confidence is an ordinal LEVEL, not a float (see src/schema.py Confidence).
+// Ordered weakest → strongest; SEVERE is the alarm floor (declined/absent value,
+// cross-artifact conflict, hallucination risk). Thresholds are a minimum level.
+export type ConfidenceLevel = "severe" | "low" | "medium" | "high" | "certain";
+
 export interface Evidence {
   artifact_id: string;
   locator: string | null;
@@ -20,7 +25,7 @@ export interface Evidence {
 // The confidence envelope wrapping every extracted leaf value.
 export interface Extracted<T = unknown> {
   value: T | null;
-  confidence: number; // 0..1
+  confidence: ConfidenceLevel;
   status: FieldStatus;
   extractor: string | null;
   note: string | null;
@@ -179,7 +184,7 @@ export interface ReviewResult {
 }
 
 export interface ThresholdResult {
-  thresholds: Record<string, number>;
+  thresholds: Record<string, ConfidenceLevel>;
   review_queue_before: number;
   review_queue_after: number;
 }

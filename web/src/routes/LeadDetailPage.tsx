@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
-import type { CanonicalLead, ReviewDecision } from "../types";
+import type { CanonicalLead, ConfidenceLevel, ReviewDecision } from "../types";
 import { coreGroups, lineItemRows } from "../lib/fields";
 import type { FieldRow as FieldRowT } from "../lib/fields";
 import { REVIEWER } from "../lib/reviewer";
@@ -71,7 +71,7 @@ function LeadDetail({
   pending,
 }: {
   lead: CanonicalLead;
-  thresholds: Record<string, number>;
+  thresholds: Record<string, ConfidenceLevel>;
   onDecision: (d: ReviewDecision) => void;
   pending: boolean;
 }) {

@@ -1,10 +1,20 @@
 import { useState } from "react";
 import type { FieldRow as FieldRowT } from "../lib/fields";
-import { isHumanTouched, statusMeta } from "../lib/fields";
+import { isHumanTouched } from "../lib/fields";
+import { levelLabel, railTone } from "../lib/confidence";
+import type { RailTone } from "../lib/confidence";
 import type { Evidence, ReviewDecision } from "../types";
 import { formatValue, humanize } from "../lib/format";
 import ConfidenceRail from "./ConfidenceRail";
 import { StatusChip } from "./ui";
+
+const LEVEL_TEXT: Record<RailTone, string> = {
+  commit: "text-commit-ink",
+  review: "text-review-ink",
+  alarm: "text-alarm-ink",
+  muted: "text-ink-faint",
+  human: "text-brand-deep",
+};
 
 const REASON_CODES = ["wrong_sku", "hallucinated", "missed", "unit_error", "other"];
 
@@ -23,8 +33,8 @@ interface Props {
 
 export default function FieldRow({ row, flagged, onDecision, pending }: Props) {
   const { field, path, label, threshold } = row;
-  const meta = statusMeta(field.status);
   const present = hasValue(field.value);
+  const tone = railTone(field.status, field.confidence, present);
   const [open, setOpen] = useState(flagged);
   const [editing, setEditing] = useState(false);
 
@@ -70,17 +80,19 @@ export default function FieldRow({ row, flagged, onDecision, pending }: Props) {
         {/* status + rail */}
         <div className="col-span-2 flex flex-col items-stretch gap-1.5 sm:col-span-1 sm:items-end">
           <StatusChip status={field.status} />
-          <div className="w-full sm:max-w-[130px]">
+          <div className="w-full sm:max-w-[140px]">
             <ConfidenceRail
-              confidence={field.confidence}
+              level={field.confidence}
               threshold={threshold}
-              tone={meta.tone}
+              tone={tone}
               hasValue={present}
             />
           </div>
-          <span className="font-mono text-[10px] tabular-nums text-ink-faint">
-            {present ? `${Math.round(field.confidence * 100)}%` : "no value"} · thr{" "}
-            {Math.round(threshold * 100)}%
+          <span className="font-mono text-[10px] text-ink-faint">
+            <span className={present ? `font-medium ${LEVEL_TEXT[tone]}` : ""}>
+              {present ? levelLabel(field.confidence) : "no value"}
+            </span>{" "}
+            · min {levelLabel(threshold)}
           </span>
         </div>
       </button>

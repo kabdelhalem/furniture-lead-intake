@@ -30,6 +30,11 @@ export default {
         review: "#B9772A",
         "review-ink": "#875313",
         "review-bg": "#F7EAD6",
+        // Severe — the alarm floor: conflict, hallucination risk, declined match.
+        // A vermilion kept distinct from the amber review hue.
+        alarm: "#B23A2E",
+        "alarm-ink": "#8A281F",
+        "alarm-bg": "#F4DBD6",
         muted: "#8A928C",
         "muted-bg": "#EAEEE9",
         // Human-touched fields read as "a person signed this" — brand-family.
