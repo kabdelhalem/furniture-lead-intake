@@ -70,14 +70,19 @@ export function ReviewStatusBadge({ status }: { status: string }) {
 export function PriorityMeter({ score }: { score: number }) {
   const pct = Math.max(0, Math.min(100, score));
   return (
-    <div className="flex items-center gap-2.5">
-      <div className="h-1.5 w-16 overflow-hidden rounded-full bg-line">
-        <div
-          className="h-full rounded-full bg-gradient-to-r from-brand to-brand-deep"
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-      <span className="font-mono text-sm font-bold tabular-nums text-ink">{score}</span>
+    <div
+      className="h-1.5 w-28 overflow-hidden rounded-full bg-line"
+      role="meter"
+      aria-valuenow={score}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-label={`Priority ${score} of 100`}
+      title={`Priority ${score}/100`}
+    >
+      <div
+        className="h-full rounded-full bg-gradient-to-r from-brand to-brand-deep"
+        style={{ width: `${pct}%` }}
+      />
     </div>
   );
 }
