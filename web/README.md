@@ -4,6 +4,17 @@ A single-page review console for the lead-intake pipeline. It makes the one idea
 the pipeline is built around visible: **every field carries its own confidence,
 and a reviewer only touches the fields that fall below their threshold.**
 
+## Two audiences, one bench
+
+A discreet **Sales / Eng** toggle in the header (persisted; also settable via a
+`?mode=sales|engineering` link) switches who the UI is for:
+
+- **Sales** (default) — a clean, quote-style lead view: what was captured and
+  only the details that need a decision. No confidence internals, field paths,
+  thresholds, or routing/artifact metadata.
+- **Engineering** — the full "god view": per-field confidence rails, evidence,
+  extractor tiers, routing rules, and the Thresholds tuning tab.
+
 Four views:
 
 - **Queue** — inbound leads, highest priority first. Flagged leads carry an amber
