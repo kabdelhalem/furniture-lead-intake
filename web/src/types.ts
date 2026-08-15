@@ -238,3 +238,29 @@ export interface ReviewDecision {
   reviewer?: string;
   reason_code?: string;
 }
+
+// GET /observability — per-field-class calibration signal from review outcomes.
+// Mirrors src/observability.py summarize(). "tighten" = raise this class's
+// minimum level (we auto-committed something a human then corrected); "loosen" =
+// lower it (we flagged something the reviewer confirmed unchanged).
+export type ThresholdSuggestion = "tighten" | "loosen" | "ok";
+
+export interface FieldClassHealth {
+  reviewed: number;
+  corrected: number;
+  confirmed: number;
+  false_auto_commits: number; // auto-committed but corrected — confidently wrong
+  over_flags: number; // flagged but confirmed as-is — over-cautious
+  current_min_level: ConfidenceLevel;
+  suggestion: ThresholdSuggestion;
+}
+
+export interface Observability {
+  reviewed_fields: number;
+  corrections: number;
+  confirmations: number;
+  false_auto_commits: number;
+  over_flags: number;
+  by_field_class: Record<string, FieldClassHealth>;
+  reason_codes: Record<string, number>;
+}

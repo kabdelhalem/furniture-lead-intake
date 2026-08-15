@@ -4,6 +4,7 @@ import type {
   ConfidenceLevel,
   Dashboard,
   LeadSummary,
+  Observability,
   ReviewDecision,
   IngestRawResult,
   ReviewResult,
@@ -91,6 +92,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+
+  // Per-field-class calibration signal from real review outcomes: which
+  // confidence thresholds to tighten (we auto-committed something wrong) or
+  // loosen (we flagged something that was fine). Empty until a reviewer acts.
+  observability: () => request<Observability>("/observability"),
 
   thresholds: () => request<Record<string, ConfidenceLevel>>("/thresholds"),
 
