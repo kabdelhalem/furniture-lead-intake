@@ -29,7 +29,7 @@ from .llm import LLM, LLMCacheMiss, LLMMode
 from .observability import summarize
 from .pipeline import apply_corrections, run_lead
 from .rawlead import build_artifacts
-from .run_corpus import DEMO_RECEIVED, ingest_lead
+from .run_corpus import DEMO_RECEIVED, _load_dotenv, ingest_lead
 from .schema import Correction, ReviewStatus, apply_policy
 
 # Rough demo ROI: a reviewer spends about this long eyeballing one field.
@@ -46,6 +46,7 @@ def create_app(
     llm_factory=None,
     live_llm_factory=None,
 ) -> FastAPI:
+    _load_dotenv()          # so `make serve` picks up ANTHROPIC_API_KEY for /ingest-raw
     engine = engine or store.init_db()
     corpus_dir = pathlib.Path(corpus_dir)
     llm_factory = llm_factory or (lambda: LLM())
