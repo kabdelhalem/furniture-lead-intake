@@ -91,7 +91,9 @@ def assemble(
             extractor=extractor,
             evidence=evidence(ef),
             alternatives=alternatives or [],
-            note=note or (ef.snippet and None),
+            # a supplied note (e.g. the matcher's) wins; otherwise explain why the
+            # field is uncertain in plain English, or None if it's clean.
+            note=note or confidence.explain(path, sig),
         )
 
     def text(path, ef: EField, *, cross=None) -> Extracted:

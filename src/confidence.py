@@ -139,6 +139,31 @@ def _apply_cross_artifact(c: Confidence, mode: str | None) -> Confidence:
 # Entry point
 # --------------------------------------------------------------------------
 
+def explain(path: str, signals: Signals) -> str | None:
+    """A plain-English reason a field is uncertain, or None if it's clean.
+
+    Surfaces the *deterministic* signal that drove the confidence down, so the
+    reviewer sees WHY a field was flagged — "size falls between two SKUs" beats a
+    bare low badge. Clean fields return None (no note to show)."""
+    if not signals.present:
+        return "not stated in the source"
+    g = _generic_path(path)
+    if g in (_EMAIL, _PHONE) and signals.regex_valid is False:
+        return f"doesn't look like a valid {'email' if g == _EMAIL else 'phone number'}"
+    if g == _SKU:
+        if signals.ambiguous:
+            return "ambiguous — could match several catalog SKUs"
+        if signals.off_nominal:
+            return "size falls between two nominal SKU sizes — verify the model"
+    if g == _QTY and signals.hedged:
+        return "the source hedged the quantity"
+    if (g in _DATES or g in _DIMENSIONS) and signals.normalized_ok is False:
+        return "couldn't parse the value cleanly"
+    if signals.cross_artifact == "conflict":
+        return "two sources disagree on this value"
+    return None
+
+
 def score(path: str, signals: Signals) -> Confidence:
     """Calibrated confidence LEVEL for the field at `path`.
 
