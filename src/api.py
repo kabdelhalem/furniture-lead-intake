@@ -25,9 +25,10 @@ from sqlalchemy import Engine
 from . import schema, store
 from .dedup import fingerprint, mark_duplicate, mark_duplicates
 from .ingest import ingest_file
-from .llm import LLM
+from .llm import LLM, LLMCacheMiss, LLMMode
 from .observability import summarize
-from .pipeline import apply_corrections
+from .pipeline import apply_corrections, run_lead
+from .rawlead import build_artifacts
 from .run_corpus import DEMO_RECEIVED, ingest_lead
 from .schema import Correction, ReviewStatus, apply_policy
 
@@ -43,10 +44,14 @@ def create_app(
     engine: Engine | None = None,
     corpus_dir: str | pathlib.Path = "./corpus",
     llm_factory=None,
+    live_llm_factory=None,
 ) -> FastAPI:
     engine = engine or store.init_db()
     corpus_dir = pathlib.Path(corpus_dir)
     llm_factory = llm_factory or (lambda: LLM())
+    # /ingest-raw runs on arbitrary input, so it can't replay from cache — it
+    # calls the model live (needs a key). Injectable so tests can replay instead.
+    live_llm_factory = live_llm_factory or (lambda: LLM(mode=LLMMode.LIVE))
 
     app = FastAPI(title="Furniture lead intake", version="0.1.0")
 
@@ -67,6 +72,41 @@ def create_app(
         _dedup_against_store(engine, lead)
         store.save_lead(engine, lead)
         return _summary_dict(store.list_leads(engine, status=None), lead_id)
+
+    @app.post("/ingest-raw")
+    def ingest_raw(payload: dict = Body(default_factory=dict)) -> dict:
+        """Run the REAL pipeline on arbitrary pasted/uploaded input — the
+        throw-any-lead-at-it demo. Give `text` (a pasted email/transcript) or
+        `content_b64` (an uploaded file), plus a `filename` for the kind guess.
+        Returns the extracted lead AND the ingested source, so the UI can show
+        source vs. extraction without a follow-up call."""
+        text, content_b64 = payload.get("text"), payload.get("content_b64")
+        if not text and not content_b64:
+            raise HTTPException(400, "provide 'text' or 'content_b64'")
+        filename = payload.get("filename") or ("pasted.eml" if text else "upload.bin")
+        n = sum(1 for s in store.list_leads(engine, status=None)
+                if s.lead_id.startswith("RAW-")) + 1
+        lead_id = f"RAW-{n:03d}"
+        artifacts = build_artifacts(filename, payload.get("kind"), text=text,
+                                    content_b64=content_b64,
+                                    artifact_id=f"{lead_id}::{filename}")
+        try:
+            lead = run_lead(artifacts, lead_id=lead_id,
+                            received_at=DEMO_RECEIVED, llm=live_llm_factory())
+        except LLMCacheMiss:
+            raise HTTPException(503, "no cached response and replay mode — set "
+                                     "ANTHROPIC_API_KEY and LLM_MODE=live to run live")
+        except Exception as e:  # auth/connection/parse — surface, don't 500 opaquely
+            raise HTTPException(502, f"live extraction failed: {type(e).__name__}: {e}")
+        _dedup_against_store(engine, lead)
+        store.save_lead(engine, lead)
+        return {
+            "lead": lead.model_dump(mode="json"),
+            "source": [{"artifact_id": a.artifact_id, "kind": a.kind,
+                        "filename": a.filename, "needs_ocr": a.needs_ocr, "text": a.text,
+                        "blocks": [{"locator": b.locator, "text": b.text} for b in a.blocks]}
+                       for a in artifacts],
+        }
 
     @app.post("/seed")
     def seed() -> dict:
