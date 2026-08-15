@@ -4,14 +4,43 @@ import LeadDetailPage from "./routes/LeadDetailPage";
 import DashboardPage from "./routes/DashboardPage";
 import ThresholdsPage from "./routes/ThresholdsPage";
 import { REVIEWER } from "./lib/reviewer";
+import { useMode } from "./lib/mode";
 
+// Thresholds is a tuning tool — engineering only. The rest is shared.
 const NAV = [
-  { to: "/queue", label: "Queue" },
-  { to: "/dashboard", label: "Dashboard" },
-  { to: "/thresholds", label: "Thresholds" },
+  { to: "/queue", label: "Queue", eng: false },
+  { to: "/dashboard", label: "Dashboard", eng: false },
+  { to: "/thresholds", label: "Thresholds", eng: true },
 ];
 
+function ModeToggle() {
+  const { mode, setMode } = useMode();
+  return (
+    <div
+      className="flex items-center rounded-full border border-line bg-panel-2 p-0.5"
+      role="group"
+      aria-label="View mode"
+      title="Switch between the salesperson view and the engineering god-view"
+    >
+      {(["sales", "engineering"] as const).map((m) => (
+        <button
+          key={m}
+          onClick={() => setMode(m)}
+          aria-pressed={mode === m}
+          className={`rounded-full px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.1em] transition-colors ${
+            mode === m ? "bg-ink text-panel" : "text-ink-faint hover:text-ink-soft"
+          }`}
+        >
+          {m === "sales" ? "Sales" : "Eng"}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function Masthead() {
+  const { isEng } = useMode();
+  const nav = NAV.filter((n) => !n.eng || isEng);
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-paper/85 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center gap-6 px-5 py-3">
@@ -30,7 +59,7 @@ function Masthead() {
         </NavLink>
 
         <nav className="ml-4 flex items-center gap-1" aria-label="Primary">
-          {NAV.map((n) => (
+          {nav.map((n) => (
             <NavLink
               key={n.to}
               to={n.to}
@@ -47,7 +76,8 @@ function Masthead() {
           ))}
         </nav>
 
-        <div className="ml-auto flex items-center gap-2.5 text-right">
+        <div className="ml-auto flex items-center gap-3 text-right">
+          <ModeToggle />
           <span className="hidden sm:block leading-tight">
             <span className="block text-sm font-medium">{REVIEWER.name}</span>
             <span className="eyebrow">{REVIEWER.role}</span>
@@ -65,6 +95,7 @@ function Masthead() {
 }
 
 export default function App() {
+  const { isEng } = useMode();
   return (
     <div className="min-h-screen">
       <Masthead />
@@ -74,7 +105,11 @@ export default function App() {
           <Route path="/queue" element={<QueuePage />} />
           <Route path="/leads/:id" element={<LeadDetailPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/thresholds" element={<ThresholdsPage />} />
+          {/* Thresholds is engineering-only; sales users get redirected out. */}
+          <Route
+            path="/thresholds"
+            element={isEng ? <ThresholdsPage /> : <Navigate to="/queue" replace />}
+          />
           <Route path="*" element={<Navigate to="/queue" replace />} />
         </Routes>
       </main>

@@ -8,16 +8,24 @@ import type { FieldRow as FieldRowT } from "../lib/fields";
 import { REVIEWER } from "../lib/reviewer";
 import { formatMoney, humanize, relativeReceived, segmentLabel } from "../lib/format";
 import FieldRow from "../components/FieldRow";
+import SalesLeadView from "../components/SalesLeadView";
 import { ErrorNote, ReviewStatusBadge, SegmentBadge, Spinner } from "../components/ui";
 import { useToast } from "../components/Toast";
+import { useMode } from "../lib/mode";
 
 export default function LeadDetailPage() {
   const { id = "" } = useParams();
   const qc = useQueryClient();
   const toast = useToast();
+  const { isEng } = useMode();
 
   const leadQ = useQuery({ queryKey: ["lead", id], queryFn: () => api.lead(id) });
-  const thrQ = useQuery({ queryKey: ["thresholds"], queryFn: () => api.thresholds() });
+  // The sales view doesn't show thresholds, so only fetch them for engineering.
+  const thrQ = useQuery({
+    queryKey: ["thresholds"],
+    queryFn: () => api.thresholds(),
+    enabled: isEng,
+  });
 
   const review = useMutation({
     mutationFn: (decision: ReviewDecision) =>
@@ -40,7 +48,7 @@ export default function LeadDetailPage() {
       }),
   });
 
-  if (leadQ.isLoading || thrQ.isLoading) return <Spinner label="Opening the record…" />;
+  if (leadQ.isLoading || (isEng && thrQ.isLoading)) return <Spinner label="Opening the record…" />;
   if (leadQ.isError || !leadQ.data)
     return (
       <ErrorNote
@@ -51,13 +59,16 @@ export default function LeadDetailPage() {
     );
 
   const lead = leadQ.data;
-  const thresholds = thrQ.data ?? {};
   const onDecision = (d: ReviewDecision) => review.mutate(d);
+
+  if (!isEng) {
+    return <SalesLeadView lead={lead} onDecision={onDecision} pending={review.isPending} />;
+  }
 
   return (
     <LeadDetail
       lead={lead}
-      thresholds={thresholds}
+      thresholds={thrQ.data ?? {}}
       onDecision={onDecision}
       pending={review.isPending}
     />
