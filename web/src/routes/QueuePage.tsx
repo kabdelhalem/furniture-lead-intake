@@ -71,7 +71,6 @@ export default function QueuePage() {
   const toast = useToast();
   const [filter, setFilter] = useState<Filter>("queue"); // land on what needs review
   const [sort, setSort] = useState<{ key: SortKey; dir: Dir }>({ key: "priority", dir: "desc" });
-  const [simId, setSimId] = useState<string>(CORPUS_LEAD_IDS[6]); // L007, the SKU-ambiguity one
 
   const toggleSort = (key: SortKey) =>
     setSort((s) =>
@@ -126,6 +125,23 @@ export default function QueuePage() {
   });
 
   const leads = leadsQ.data ?? [];
+  const seededIds = useMemo(() => new Set(leads.map((l) => l.lead_id)), [leads]);
+
+  // "Simulate inbox" drops the next sample lead that isn't in the queue yet, so
+  // each click feels like a fresh inbound arriving (the demo stand-in for IMAP).
+  const simulateNext = () => {
+    const next = CORPUS_LEAD_IDS.find((id) => !seededIds.has(id));
+    if (!next) {
+      toast.push({
+        tone: "info",
+        title: "Every sample lead is already in the queue",
+        detail: "Paste a fresh one under “Try a lead” to run a live extraction.",
+      });
+      return;
+    }
+    simulate.mutate(next);
+  };
+
   const shown = useMemo(() => {
     const filtered =
       filter === "queue"
@@ -153,37 +169,24 @@ export default function QueuePage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1 rounded-full border border-line bg-panel px-1.5 py-1.5 shadow-panel">
-            <label htmlFor="sim" className="sr-only">
-              Corpus lead to simulate
-            </label>
-            <select
-              id="sim"
-              value={simId}
-              onChange={(e) => setSimId(e.target.value)}
-              className="rounded-full bg-transparent px-2 py-1 font-mono text-sm text-ink focus:outline-none"
-            >
-              {CORPUS_LEAD_IDS.map((id) => (
-                <option key={id} value={id}>
-                  {id}
-                </option>
-              ))}
-            </select>
+          <Tooltip content="Drops the next sample lead into the queue — the demo stand-in for a new email arriving (replays a pre-recorded corpus lead, so it's instant).">
             <button
-              onClick={() => simulate.mutate(simId)}
+              onClick={simulateNext}
               disabled={simulate.isPending}
-              className="rounded-full bg-brand px-3.5 py-1.5 text-sm font-medium text-panel transition-colors hover:bg-brand-deep disabled:opacity-60"
+              className="rounded-full bg-brand px-4 py-2 text-sm font-medium text-panel transition-colors hover:bg-brand-deep disabled:opacity-60"
             >
-              {simulate.isPending ? "Ingesting…" : "Simulate inbox"}
+              {simulate.isPending ? "Ingesting…" : "Simulate a new lead"}
             </button>
-          </div>
-          <button
-            onClick={() => seed.mutate()}
-            disabled={seed.isPending}
-            className="rounded-full border border-line-strong bg-panel px-4 py-2 text-sm font-medium text-ink-soft shadow-panel transition-colors hover:bg-panel-2 disabled:opacity-60"
-          >
-            {seed.isPending ? "Seeding…" : "Seed corpus"}
-          </button>
+          </Tooltip>
+          <Tooltip content="Loads all the pre-built sample leads at once, so the queue and dashboard are populated. Safe to click again — it won't duplicate.">
+            <button
+              onClick={() => seed.mutate()}
+              disabled={seed.isPending}
+              className="rounded-full border border-line-strong bg-panel px-4 py-2 text-sm font-medium text-ink-soft shadow-panel transition-colors hover:bg-panel-2 disabled:opacity-60"
+            >
+              {seed.isPending ? "Loading…" : "Load all samples"}
+            </button>
+          </Tooltip>
         </div>
       </div>
 
@@ -368,8 +371,8 @@ function EmptyQueue({ onSeed, seeding }: { onSeed: () => void; seeding: boolean 
       <div>
         <p className="font-display text-lg font-semibold">The bench is empty</p>
         <p className="mx-auto mt-1 max-w-sm text-sm text-ink-soft">
-          Seed the demo corpus to load the sample leads, or simulate a single inbound from the
-          controls above.
+          Load the sample leads to fill the queue, or use “Simulate a new lead” above to watch
+          them arrive one at a time.
         </p>
       </div>
       <button
@@ -377,7 +380,7 @@ function EmptyQueue({ onSeed, seeding }: { onSeed: () => void; seeding: boolean 
         disabled={seeding}
         className="rounded-full bg-brand px-5 py-2 text-sm font-medium text-panel hover:bg-brand-deep disabled:opacity-60"
       >
-        {seeding ? "Seeding…" : "Seed corpus"}
+        {seeding ? "Loading…" : "Load all samples"}
       </button>
     </div>
   );

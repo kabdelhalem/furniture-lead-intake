@@ -131,7 +131,7 @@ function ReliabilityPanel() {
   });
 
   return (
-    <section className="card p-5">
+    <section className="card mt-4 p-5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div>
           <p className="eyebrow">Proof it knows what it knows</p>
