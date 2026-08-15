@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pathlib
 import sys
 from datetime import datetime
@@ -73,6 +74,23 @@ def run_corpus(
     return predicted, uncached, totals
 
 
+def _load_dotenv(path: str = ".env") -> None:
+    """Load KEY=value pairs from .env into the environment (without overriding
+    anything already set), so `make record` picks up ANTHROPIC_API_KEY without a
+    separate export. Never prints values."""
+    p = pathlib.Path(path)
+    if not p.exists():
+        return
+    for line in p.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        key, val = key.strip(), val.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = val
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--corpus", default="./corpus", type=pathlib.Path)
@@ -80,8 +98,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="record mode: make live calls and write the cache (needs a key)")
     args = ap.parse_args(argv)
 
+    _load_dotenv()
     if args.record:
-        import os
         os.environ["LLM_MODE"] = "record"
 
     if not (args.corpus / "manifest.json").exists():

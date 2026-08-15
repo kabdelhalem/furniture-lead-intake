@@ -14,7 +14,7 @@ harness and the UI without the model re-deciding anything downstream.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class EField(BaseModel):
@@ -27,6 +27,19 @@ class EField(BaseModel):
     snippet: str | None = None       # verbatim source span, <=200 chars
     conflict: bool = False           # two artifacts disagree on this field (L014)
 
+    @field_validator("value", mode="before")
+    @classmethod
+    def _coerce_scalar(cls, v):
+        """Models don't reliably return every value as a string — a boolean field
+        comes back as JSON `true`, a quantity as `8`. Coerce any scalar to the
+        string the deterministic layer expects; booleans normalize to the words
+        `_parse_bool` reads. A null stays null (never invent a value)."""
+        if v is None or isinstance(v, str):
+            return v
+        if isinstance(v, bool):
+            return "true" if v else "false"
+        return str(v)
+
 
 class EDimensions(BaseModel):
     width: EField = Field(default_factory=EField)
@@ -37,6 +50,15 @@ class EDimensions(BaseModel):
 class ELineItem(BaseModel):
     raw_description: str = ""         # verbatim — the audit anchor, never normalized
     quantity: EField = Field(default_factory=EField)
+
+    @field_validator("raw_description", mode="before")
+    @classmethod
+    def _unwrap(cls, v):
+        """Models sometimes wrap raw_description as a field object like the other
+        leaves; accept both the plain string and the {"value": ...} form."""
+        if isinstance(v, dict):
+            return v.get("value") or ""
+        return v or ""
     material: EField = Field(default_factory=EField)
     finish: EField = Field(default_factory=EField)
     com_fabric: EField = Field(default_factory=EField)
