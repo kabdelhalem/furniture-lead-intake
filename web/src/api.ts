@@ -4,6 +4,7 @@ import type {
   Dashboard,
   LeadSummary,
   ReviewDecision,
+  IngestRawResult,
   ReviewResult,
   SeedResult,
   SourceDoc,
@@ -77,6 +78,14 @@ export const api = {
 
   // The ingested view of a lead's artifacts: parsed text + located blocks.
   source: (id: string) => request<SourceDoc[]>(`/leads/${id}/source`),
+
+  // Live extraction of arbitrary pasted text or an uploaded file (base64). Real
+  // model call — takes a few seconds and needs ANTHROPIC_API_KEY on the server.
+  ingestRaw: (payload: { text?: string; content_b64?: string; filename?: string }) =>
+    request<IngestRawResult>("/ingest-raw", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
 
   thresholds: () => request<Record<string, ConfidenceLevel>>("/thresholds"),
 

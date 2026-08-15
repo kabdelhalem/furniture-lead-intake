@@ -69,6 +69,12 @@ export default function FieldRow({ row, flagged, onDecision, pending }: Props) {
               {field.status === "human_corrected" ? "edited by reviewer" : "confirmed by reviewer"}
             </span>
           )}
+          {/* why it's uncertain — plain-English reason, always visible on flagged fields */}
+          {field.note && (flagged || field.status === "needs_review") && (
+            <span className="mt-0.5 block text-2xs leading-snug text-review-ink">
+              {field.note}
+            </span>
+          )}
         </div>
 
         {/* status + rail */}
@@ -93,13 +99,6 @@ export default function FieldRow({ row, flagged, onDecision, pending }: Props) {
 
       {open && (
         <div className="animate-rise-in space-y-3 px-3 pb-3.5 pt-1">
-          {field.note && (
-            <p className="rounded-md bg-panel px-3 py-2 text-xs leading-relaxed text-ink-soft ring-1 ring-line">
-              <span className="font-medium text-ink">Why it hesitated: </span>
-              {field.note}
-            </p>
-          )}
-
           <EvidenceList evidence={field.evidence} extractor={field.extractor} />
 
           {canReview && !editing && (

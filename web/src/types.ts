@@ -199,6 +199,12 @@ export interface SourceDoc {
   blocks: SourceBlock[];
 }
 
+// POST /ingest-raw — a live extraction of pasted/uploaded input.
+export interface IngestRawResult {
+  lead: CanonicalLead;
+  source: SourceDoc[];
+}
+
 export interface ReviewResult {
   lead_id: string;
   status: string;

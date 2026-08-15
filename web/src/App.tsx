@@ -3,6 +3,7 @@ import QueuePage from "./routes/QueuePage";
 import LeadDetailPage from "./routes/LeadDetailPage";
 import DashboardPage from "./routes/DashboardPage";
 import ThresholdsPage from "./routes/ThresholdsPage";
+import TryLeadPage from "./routes/TryLeadPage";
 import { REVIEWER } from "./lib/reviewer";
 import { useMode } from "./lib/mode";
 import { Tooltip } from "./components/Tooltip";
@@ -11,6 +12,7 @@ import { Tooltip } from "./components/Tooltip";
 const NAV = [
   { to: "/queue", label: "Queue", eng: false },
   { to: "/dashboard", label: "Dashboard", eng: false },
+  { to: "/try", label: "Try a lead", eng: false },
   { to: "/thresholds", label: "Thresholds", eng: true },
 ];
 
@@ -115,6 +117,7 @@ export default function App() {
           <Route path="/queue" element={<QueuePage />} />
           <Route path="/leads/:id" element={<LeadDetailPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/try" element={<TryLeadPage />} />
           {/* Thresholds is engineering-only; sales users get redirected out. */}
           <Route
             path="/thresholds"
