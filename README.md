@@ -10,59 +10,70 @@ about, not the whole record.
 ## How it works
 
 ```
-┌─ PHASE 1  Ingest ─────────────────────────────────────────────────────────────┐
-│   Inbound artifacts for one lead:                                             │
-│     email   pdf   scanned-fax   xlsx   dxf   transcript                       │
-│       └───────┴────────┬─────────┴──────┴──────┘                              │
-│                        ▼                                                      │
-│   ingest ──▶ IngestedArtifact - located blocks ("Sheet1!C14", "body line 7")  │
-│              a scanned fax has no text layer ──▶ vision path (bytes to model) │
-└───────────────────────────────────────────────────────────────────────────────┘
-                                  │
-                                  ▼  artifacts for one lead
-┌─ PHASE 2  LangGraph pipeline   (src/pipeline.py) ─────────────────────────────┐
-│   ┌──────────────┐   reconcile only when 2+ artifacts conflict (L014):        │
-│   │   extract    │──▶┌──────────────┐   Claude Sonnet - the pricier tier,     │
-│   │ Claude Haiku │   │  reconcile   │   spent only where ambiguity lives      │
-│   │ read+locate  │◀──│  conflicts   │                                         │
-│   └──────────────┘   └──────────────┘                                         │
-│         │  ExtractionResult - each field: value + level (certain..severe)     │
-│         ▼                                                                     │
-│   ┌────────────────────────────────────────────────────────────────┐          │
-│   │ assemble   (deterministic - no model call)                     │          │
-│   │   normalize    mm->in / dates / money / phones                 │          │
-│   │   match        fuzzy SKU vs 30-SKU catalog (+ alternatives)    │          │
-│   │   confidence   model level  +  deterministic signals           │          │
-│   │   apply_policy   level >= field-class minimum ?  auto : review │          │
-│   └────────────────────────────────────────────────────────────────┘          │
-│         │  CanonicalLead                                                      │
-│         ▼                                                                     │
-│   ┌───────────────────────────────────────────────────────────────────────┐   │
-│   │ route    -  rules only:  segment / territory / priority / rules_fired │   │
-│   └───────────────────────────────────────────────────────────────────────┘   │
-│         │                                                                     │
-│         ▼                                                                     │
-│   ┌──────────────┐   any flagged fields?                                      │
-│   │    review    │──── yes ──▶ interrupt ──▶ human corrects ──▶ resume        │
-│   │  interrupt/  │              (LangGraph checkpoint - a durable pause)      │
-│   │   resume     │──── none ──▶ auto-committed                                │
-│   └──────────────┘                                                            │
-└───────────────────────────────────────────────────────────────────────────────┘
-                                  │
-                                  ▼  a routed, level-scored lead
-┌─ PHASE 3  Persist + serve ────────────────────────────────────────────────────┐
-│   ┌───────────────────────┐         ┌───────────────────────┐                 │
-│   │  Store  (SQLite)      │         │  FastAPI              │                 │
-│   │  ─────────────────    │◀───────▶│  ───────────          │                 │
-│   │  lead JSON = truth    │         │  /leads       queue   │                 │
-│   │  projection columns   │         │  /leads/{id}  detail  │                 │
-│   │  corrections          │         │  /dashboard   ROI     │                 │
-│   └───────────────────────┘         │  /thresholds  sliders │                 │
-│                                     └───────────────────────┘                 │
-│                                               │                               │
-│                                               ▼                               │
-│                                      React review UI                          │
-└───────────────────────────────────────────────────────────────────────────────┘
+┌─ PHASE 1  Ingest ────────────────────────────────────────────────────────────────┐
+│   Inbound artifacts for one lead:                                                │
+│     email   pdf   scanned-fax   xlsx   dxf   transcript                          │
+│       └───────┴────────┬─────────┴──────┴──────┘                                 │
+│                        ▼                                                         │
+│   ingest ──▶ IngestedArtifact - located blocks ("Sheet1!C14", "body line 7")     │
+│              a scanned fax has no text layer ──▶ vision path (bytes to model)    │
+└──────────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼  artifacts for one lead
+┌─ PHASE 2  LangGraph pipeline   (src/pipeline.py) ────────────────────────────────┐
+│   ┌──────────────┐   reconcile only when 2+ artifacts conflict (L014):           │
+│   │   extract    │──▶┌──────────────┐   Claude Sonnet - the pricier tier,        │
+│   │ Claude Haiku │   │  reconcile   │   spent only where ambiguity lives         │
+│   │ read+locate  │◀──│  conflicts   │                                            │
+│   └──────────────┘   └──────────────┘                                            │
+│         │  ExtractionResult - each field: value + level (certain..severe)        │
+│         ▼                                                                        │
+│   ┌────────────────────────────────────────────────────────────────┐             │
+│   │ assemble   (deterministic - no model call)                     │             │
+│   │   normalize    mm->in / dates / money / phones                 │             │
+│   │   match        fuzzy SKU vs 30-SKU catalog (+ alternatives)    │             │
+│   │   confidence   model level  +  deterministic signals           │             │
+│   │   explain      plain-English reason a field is uncertain       │             │
+│   │   apply_policy   level >= field-class minimum ?  auto : review │             │
+│   └────────────────────────────────────────────────────────────────┘             │
+│         │  CanonicalLead                                                         │
+│         ▼                                                                        │
+│   ┌───────────────────────────────────────────────────────────────────────┐      │
+│   │ route    -  rules only:  segment / territory / priority / rules_fired │      │
+│   └───────────────────────────────────────────────────────────────────────┘      │
+│         │                                                                        │
+│         ▼                                                                        │
+│   ┌──────────────┐   any flagged fields?                                         │
+│   │    review    │──── yes ──▶ interrupt ──▶ human corrects ──▶ resume           │
+│   │  interrupt/  │              (LangGraph checkpoint - a durable pause)         │
+│   │   resume     │──── none ──▶ auto-committed                                   │
+│   └──────────────┘                                                               │
+└──────────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼  a routed, level-scored lead
+┌─ PHASE 3  Dedup + persist + serve ───────────────────────────────────────────────┐
+│   dedup: a resubmission from a new address links to the original (L012 ──▶ L001) │
+│   then persist to the Store, which the FastAPI layer serves:                     │
+│                                                                                  │
+│   ┌───────────────────────────────────────────────────────────────────────┐      │
+│   │ Store (SQLite)   lead JSON = truth + projection columns + corrections │      │
+│   └───────────────────────────────────────────────────────────────────────┘      │
+│         │                                                                        │
+│         ▼                                                                        │
+│   ┌──────────────────────────────────────────────────────────────────────────┐   │
+│   │ FastAPI   (src/api.py)                                                   │   │
+│   │   /leads · /leads/{id}       the review queue + a lead's fields          │   │
+│   │   /leads/{id}/review          apply corrections / confirmations          │   │
+│   │   /leads/{id}/source · /artifacts/{id}/raw   source vs. extraction       │   │
+│   │   /dashboard                  auto-commit rate + reviewer-time ROI       │   │
+│   │   /thresholds                 tune each field class's minimum level      │   │
+│   │   /observability              review outcomes -> which levels to tune    │   │
+│   │   /calibration                per-level accuracy -> is confidence honest │   │
+│   │   /ingest-raw                 paste ANY lead and run it live             │   │
+│   └──────────────────────────────────────────────────────────────────────────┘   │
+│         │  React review UI                                                       │
+│         ▼                                                                        │
+└──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 - **Ingest** (`src/ingest.py`) — every format becomes a uniform `IngestedArtifact`
@@ -79,7 +90,23 @@ about, not the whole record.
 - **Route** (`src/routing.py`) — plain rules, no model. Every rule that fires is
   logged.
 - **Review** — a real LangGraph `interrupt`/`resume`: a lead with flagged fields
-  pauses for a reviewer and resumes with their corrections applied.
+  pauses for a reviewer and resumes with their corrections applied. Every flagged
+  field carries a plain-English `note` explaining *why* (`src/confidence.py`
+  `explain`) — "size falls between two nominal SKU sizes", "the source hedged the
+  quantity", "not stated in the source".
+- **Dedup** (`src/dedup.py`) — a resubmission from a new email address links back
+  to the original (L012 → L001) via a content fingerprint, instead of entering the
+  queue twice.
+- **Serve** (`src/store.py`, `src/api.py`) — SQLite persistence plus a FastAPI
+  layer: the review queue, lead detail (per-field confidence, evidence, notes,
+  alternatives), a tunable-threshold panel, a dashboard (auto-commit rate + a
+  reviewer-time ROI), a source-vs-extraction preview, and **`/ingest-raw`** to
+  paste *any* lead and run it through the real pipeline live.
+- **Close the loop** (`src/observability.py`, `src/calibration.py`) — review
+  outcomes become calibration signal: `/observability` recommends which thresholds
+  to move (a corrected auto-commit → *tighten*; a confirmed flag → *loosen*), and
+  `/calibration` proves the confidence is honest — per-level accuracy vs. ground
+  truth (on the corpus: `certain` 98%, `high` 95%, `severe` 18%).
 
 Every model call goes through one wrapper (`src/llm.py`) that records tokens,
 cost, latency, and model tier, and caches responses to disk — so the eval
@@ -166,10 +193,17 @@ src/
   confidence.py   per-field confidence from model + deterministic signals
   assemble.py     ExtractionResult -> typed, scored CanonicalLead
   routing.py      deterministic rules
+  dedup.py        cross-lead resubmission fingerprint
   pipeline.py     LangGraph graph with the human-review interrupt/resume
-  eval.py         field accuracy + calibration + gates
+  eval.py         field accuracy + calibration gates (L011/L012/L013)
+  calibration.py  per-level accuracy vs ground truth (is confidence honest)
+  observability.py review outcomes -> which thresholds to tune
   run_corpus.py   drive the pipeline over the corpus and score it
-  corpus/         ground-truth-first fixtures (specs.py) + renderers
+  rawlead.py      turn pasted/uploaded input into artifacts (for /ingest-raw)
+  store.py        SQLite persistence (SQLModel)
+  api.py          FastAPI layer over the pipeline, store, and policy
+  corpus/         ground-truth-first fixtures: specs.py (15 curated) +
+                  synth.py (~90 volume) + renderers
 ```
 
 ## Scope boundaries — deliberately out of scope
