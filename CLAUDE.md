@@ -65,9 +65,13 @@ hard eval failure, not a soft one.
   cost, latency, and model tier into `PipelineMetrics`. No bare SDK calls.
 - Extractors return `Extracted[T]` envelopes with `evidence` populated. A value
   with no evidence is a bug — the UI needs to show the reviewer where it came from.
-- Confidence comes from the model's own stated certainty _plus_ deterministic
-  signals (regex validation, catalog match distance, cross-artifact agreement).
-  Don't rely on self-reported confidence alone; it's poorly calibrated.
+- Confidence is an ordinal **level** (`Certain > High > Medium > Low > Severe`),
+  not a float — models are poorly calibrated at numeric probabilities, and a
+  level reads better to a reviewer. The model reports a level; the deterministic
+  signals (regex validation, catalog match distance, cross-artifact agreement,
+  source hedging) promote or demote it. `SEVERE` is the alarm floor. Thresholds
+  are a per-field-class **minimum level** to auto-commit. Don't rely on the
+  model's self-reported level alone.
 - Run `python -m src.corpus.generate --out ./corpus` after any spec change.
 - `make eval` must stay green-ish and fast enough to run constantly.
 

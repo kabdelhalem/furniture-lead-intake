@@ -132,7 +132,7 @@ def create_app(
             schema.THRESHOLDS.clear()
             schema.THRESHOLDS.update(_BASELINE_THRESHOLDS)
         for path, value in (payload.get("overrides") or {}).items():
-            schema.THRESHOLDS[path] = float(value)
+            schema.THRESHOLDS[path] = schema.Confidence(str(value).lower())
         _repolicy_all(engine)
         return {
             "thresholds": dict(schema.THRESHOLDS),

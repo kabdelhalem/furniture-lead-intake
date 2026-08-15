@@ -96,8 +96,8 @@ def test_threshold_slider_resizes_the_queue(client):
     before = client.get("/dashboard").json()["review_queue"]
     # Raise every finish/material bar to make more fields need review.
     resp = client.put("/thresholds", json={"overrides": {
-        "line_items[].finish": 0.999, "line_items[].material": 0.999,
-        "customer.company_name": 0.999,
+        "line_items[].finish": "certain", "line_items[].material": "certain",
+        "customer.company_name": "certain",
     }}).json()
     assert resp["review_queue_after"] >= resp["review_queue_before"]
     after = client.get("/dashboard").json()["review_queue"]

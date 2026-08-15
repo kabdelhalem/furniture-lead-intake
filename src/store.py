@@ -72,7 +72,7 @@ class CorrectionRow(SQLModel, table=True):
     field_path: str = ""
     old_value: str | None = None   # JSON-encoded (Correction.old/new_value are Any)
     new_value: str | None = None
-    old_confidence: float = 0.0
+    old_confidence: str = "severe"  # Confidence level value
     reviewer: str = ""
     corrected_at: str | None = None
     reason_code: str | None = None
@@ -223,7 +223,7 @@ def record_correction(engine: Engine, lead_id: str, correction: Correction) -> N
                 field_path=correction.field_path,
                 old_value=_encode(correction.old_value),
                 new_value=_encode(correction.new_value),
-                old_confidence=correction.old_confidence,
+                old_confidence=getattr(correction.old_confidence, "value", correction.old_confidence),
                 reviewer=correction.reviewer,
                 corrected_at=(
                     correction.corrected_at.isoformat()

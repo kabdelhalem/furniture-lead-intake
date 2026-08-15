@@ -36,6 +36,7 @@ from src.eval import (
 from src.schema import (
     CanonicalLead,
     Channel,
+    Confidence,
     CustomerType,
     UnitSystem,
     flatten_confidences,
@@ -288,7 +289,7 @@ def test_calibration_absent_path_is_present_false_but_passes():
     cal = score.calibration[0]
     assert cal.present is False
     assert cal.ok is True
-    assert cal.confidence == 0.0
+    assert cal.confidence is Confidence.SEVERE
 
 
 def test_calibration_threshold_comes_from_schema(truths):

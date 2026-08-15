@@ -1,0 +1,7 @@
+{
+  "text": "```json\n{\n  \"is_lead\": false,\n  \"channel\": null,\n  \"company_name\": null,\n  \"customer_type\": null,\n  \"primary_contact\": {\n    \"full_name\": null,\n    \"email\": null,\n    \"phone\": null,\n    \"title\": null,\n    \"is_decision_maker\": null\n  },\n  \"billing_city\": null,\n  \"billing_state\": null,\n  \"existing_account_id\": null,\n  \"project_name\": null,\n  \"site_city\": null,\n  \"site_state\": null,\n  \"requested_delivery\": null,\n  \"quote_deadline\": null,\n  \"budget\": null,\n  \"install_required\": null,\n  \"line_items\": []\n}\n```",
+  "input_tokens": 1171,
+  "output_tokens": 194,
+  "latency_ms": 1329,
+  "stop_reason": "end_turn"
+}

@@ -38,6 +38,7 @@ from .schema import (
     ArtifactKind,
     CanonicalLead,
     Channel,
+    Confidence,
     Contact,
     Customer,
     CustomerType,
@@ -95,33 +96,33 @@ def assemble(
 
     def text(path, ef: EField, *, cross=None) -> Extracted:
         v = ef.value.strip() if ef.value else None
-        sig = Signals(present=v is not None, model_certainty=ef.certainty,
+        sig = Signals(present=v is not None, model_level=ef.certainty,
                       cross_artifact="conflict" if ef.conflict else cross)
         return mk(path, v, ef, sig, extractor="fast:text")
 
     def email_field(path, ef: EField) -> Extracted:
         v = ef.value.strip() if ef.value else None
         valid = bool(v and _EMAIL_RE.fullmatch(v))
-        sig = Signals(present=v is not None, model_certainty=ef.certainty,
+        sig = Signals(present=v is not None, model_level=ef.certainty,
                       regex_valid=valid if v else None)
         return mk(path, v, ef, sig, extractor="regex:email")
 
     def phone_field(path, ef: EField) -> Extracted:
         norm = normalize.normalize_phone(ef.value) if ef.value else None
-        sig = Signals(present=norm is not None, model_certainty=ef.certainty,
+        sig = Signals(present=norm is not None, model_level=ef.certainty,
                       regex_valid=norm is not None if ef.value else None)
         return mk(path, norm, ef, sig, extractor="regex:phone")
 
     def date_field(path, ef: EField) -> Extracted:
         iso = normalize.parse_date(ef.value, reference) if ef.value else None
         v = date.fromisoformat(iso) if iso else None
-        sig = Signals(present=v is not None, model_certainty=ef.certainty,
+        sig = Signals(present=v is not None, model_level=ef.certainty,
                       normalized_ok=iso is not None if ef.value else None)
         return mk(path, v, ef, sig, extractor="normalize:date")
 
     def bool_field(path, ef: EField) -> Extracted:
         v = _parse_bool(ef.value)
-        sig = Signals(present=v is not None, model_certainty=ef.certainty)
+        sig = Signals(present=v is not None, model_level=ef.certainty)
         return mk(path, v, ef, sig, extractor="fast:bool")
 
     # ---- customer -------------------------------------------------------
@@ -153,11 +154,11 @@ def assemble(
         requested_delivery=date_field("project.requested_delivery", extraction.requested_delivery),
         quote_deadline=date_field("project.quote_deadline", extraction.quote_deadline),
         budget_low=mk("project.budget_low", blow, budget_ef,
-                      Signals(present=blow is not None, model_certainty=budget_ef.certainty,
+                      Signals(present=blow is not None, model_level=budget_ef.certainty,
                               normalized_ok=blow is not None if budget_ef.value else None),
                       extractor="normalize:money"),
         budget_high=mk("project.budget_high", bhigh, budget_ef,
-                       Signals(present=bhigh is not None, model_certainty=budget_ef.certainty,
+                       Signals(present=bhigh is not None, model_level=budget_ef.certainty,
                                normalized_ok=bhigh is not None if budget_ef.value else None),
                        extractor="normalize:money"),
         install_required=bool_field("project.install_required", extraction.install_required),
@@ -198,7 +199,7 @@ def _assemble_line_item(i: int, li: ELineItem, reference: date, mk) -> LineItem:
              else UnitSystem.IMPERIAL if raw_dims.strip() else None)
 
     def dim(name, value, ef):
-        sig = Signals(present=value is not None, model_certainty=ef.certainty,
+        sig = Signals(present=value is not None, model_level=ef.certainty,
                       normalized_ok=value is not None if ef.value else None)
         return mk(f"{p}.dimensions.{name}", value, ef, sig, extractor="normalize:length")
 
@@ -207,7 +208,7 @@ def _assemble_line_item(i: int, li: ELineItem, reference: date, mk) -> LineItem:
         depth_in=dim("depth_in", depth, li.dimensions.depth),
         height_in=dim("height_in", height, li.dimensions.height),
         source_units=mk(f"{p}.dimensions.source_units", units, EField(),
-                        Signals(present=units is not None, model_certainty=0.9),
+                        Signals(present=units is not None, model_level=Confidence.HIGH),
                         extractor="normalize:units"),
     )
 
@@ -234,7 +235,7 @@ def _assemble_line_item(i: int, li: ELineItem, reference: date, mk) -> LineItem:
     hedged = bool(_HEDGE_RE.search(li.quantity.snippet or li.quantity.value or ""))
     quantity = mk(
         f"{p}.quantity", qty, li.quantity,
-        Signals(present=qty is not None, model_certainty=li.quantity.certainty,
+        Signals(present=qty is not None, model_level=li.quantity.certainty,
                 normalized_ok=qty is not None if li.quantity.value else None, hedged=hedged),
         extractor="normalize:int",
     )
@@ -243,7 +244,7 @@ def _assemble_line_item(i: int, li: ELineItem, reference: date, mk) -> LineItem:
 
     def li_text(name, ef):
         v = ef.value.strip() if ef.value else None
-        sig = Signals(present=v is not None, model_certainty=ef.certainty,
+        sig = Signals(present=v is not None, model_level=ef.certainty,
                       cross_artifact="conflict" if ef.conflict else None)
         return mk(f"{p}.{name}", v, ef, sig, extractor="fast:text")
 
@@ -251,7 +252,7 @@ def _assemble_line_item(i: int, li: ELineItem, reference: date, mk) -> LineItem:
         raw_description=li.raw_description,
         matched_sku=sku,
         product_category=mk(f"{p}.product_category", category, EField(),
-                            Signals(present=category is not None, model_certainty=0.9),
+                            Signals(present=category is not None, model_level=Confidence.HIGH),
                             extractor="lookup:category"),
         quantity=quantity,
         dimensions=dimensions,
@@ -260,7 +261,7 @@ def _assemble_line_item(i: int, li: ELineItem, reference: date, mk) -> LineItem:
         com_fabric=li_text("com_fabric", li.com_fabric),
         target_unit_price=mk(f"{p}.target_unit_price", price, li.target_unit_price,
                              Signals(present=price is not None,
-                                     model_certainty=li.target_unit_price.certainty),
+                                     model_level=li.target_unit_price.certainty),
                              extractor="normalize:money"),
     )
 
@@ -274,7 +275,7 @@ def _enum_field(path, ef: EField, enum_cls, mk) -> Extracted:
     value = next((m for m in enum_cls if m.value == raw), None)
     if value is None and ef.value:
         value = getattr(enum_cls, "UNKNOWN", None)
-    sig = Signals(present=value is not None, model_certainty=ef.certainty)
+    sig = Signals(present=value is not None, model_level=ef.certainty)
     return mk(path, value, ef, sig, extractor="fast:enum")
 
 
@@ -289,7 +290,7 @@ def _channel_field(ef: EField, artifacts, mk) -> Extracted:
             value = Channel.FAX
         else:
             value = Channel.EMAIL
-    sig = Signals(present=value is not None, model_certainty=ef.certainty or 0.9)
+    sig = Signals(present=value is not None, model_level=ef.certainty)
     return mk("channel", value, ef, sig, extractor="fast:channel")
 
 

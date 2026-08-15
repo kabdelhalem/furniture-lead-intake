@@ -16,7 +16,7 @@ from datetime import date, datetime
 from enum import Enum
 from typing import Any, Generic, Literal, TypeVar
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 T = TypeVar("T")
 
@@ -72,6 +72,70 @@ class UnitSystem(str, Enum):
 
 
 # --------------------------------------------------------------------------
+# Confidence — an ORDINAL level, not a float.
+# --------------------------------------------------------------------------
+# Models are poorly calibrated at emitting numeric probabilities but far better
+# at coarse ordinal buckets, and a level ("High" / "Severe") is more legible to a
+# reviewer than "0.87". So confidence is a level throughout: the model reports
+# one, the deterministic signals promote/demote it, and apply_policy compares it
+# against a per-field-class MINIMUM level. SEVERE is the alarm floor — where a
+# hallucination risk, an ambiguous SKU, or a cross-artifact conflict lands.
+
+_CONFIDENCE_RANK = {"severe": 0, "low": 1, "medium": 2, "high": 3, "certain": 4}
+
+
+class Confidence(str, Enum):
+    SEVERE = "severe"       # alarm — declined/absent value, conflict, hallucination risk
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CERTAIN = "certain"
+
+    @property
+    def rank(self) -> int:
+        return _CONFIDENCE_RANK[self.value]
+
+    # str.Enum inherits str's lexicographic comparisons ("high" < "low"), which
+    # are wrong for us — override all four to compare by rank instead.
+    def __lt__(self, other: object) -> bool:
+        return self.rank < other.rank if isinstance(other, Confidence) else NotImplemented
+
+    def __le__(self, other: object) -> bool:
+        return self.rank <= other.rank if isinstance(other, Confidence) else NotImplemented
+
+    def __gt__(self, other: object) -> bool:
+        return self.rank > other.rank if isinstance(other, Confidence) else NotImplemented
+
+    def __ge__(self, other: object) -> bool:
+        return self.rank >= other.rank if isinstance(other, Confidence) else NotImplemented
+
+    @classmethod
+    def from_score(cls, x: float) -> Confidence:
+        """Bucket a legacy 0..1 score into a level. Kept so old numeric inputs
+        (cached responses, hand-built test fixtures) still coerce cleanly."""
+        if x >= 0.92:
+            return cls.CERTAIN
+        if x >= 0.80:
+            return cls.HIGH
+        if x >= 0.60:
+            return cls.MEDIUM
+        if x >= 0.40:
+            return cls.LOW
+        return cls.SEVERE
+
+    @classmethod
+    def coerce(cls, v: Any) -> Confidence:
+        """Accept a Confidence, a level string, or a legacy numeric score."""
+        if isinstance(v, Confidence):
+            return v
+        if isinstance(v, (int, float)) and not isinstance(v, bool):
+            return cls.from_score(float(v))
+        if isinstance(v, str):
+            return cls(v.lower())
+        return cls.SEVERE
+
+
+# --------------------------------------------------------------------------
 # The confidence envelope
 # --------------------------------------------------------------------------
 
@@ -85,20 +149,26 @@ class Evidence(BaseModel):
 class Extracted(BaseModel, Generic[T]):
     """Every extracted value is wrapped. No bare values in the canonical record."""
     value: T | None = None
-    confidence: float = Field(0.0, ge=0.0, le=1.0)
+    confidence: Confidence = Confidence.SEVERE
     status: FieldStatus = FieldStatus.NEEDS_REVIEW
     extractor: str | None = None    # "claude-haiku:email_v2", "regex:phone", "fuzzy:sku"
     evidence: list[Evidence] = Field(default_factory=list)
     alternatives: list[Any] = Field(default_factory=list)  # runner-up candidates
     note: str | None = None         # why the model hesitated — shown to reviewer
 
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def _coerce_confidence(cls, v: Any) -> Confidence:
+        return Confidence.coerce(v)
+
     @property
     def needs_review(self) -> bool:
         return self.status == FieldStatus.NEEDS_REVIEW
 
 
-def E(value: T | None = None, confidence: float = 0.0, **kw: Any) -> Extracted[T]:
-    """Terse constructor for extractor code."""
+def E(value: T | None = None, confidence: Any = Confidence.SEVERE, **kw: Any) -> Extracted[T]:
+    """Terse constructor for extractor code. `confidence` accepts a Confidence,
+    a level string, or a legacy 0..1 score (coerced)."""
     return Extracted(value=value, confidence=confidence, **kw)
 
 
@@ -171,10 +241,15 @@ class Correction(BaseModel):
     field_path: str
     old_value: Any = None
     new_value: Any = None
-    old_confidence: float = 0.0
+    old_confidence: Confidence = Confidence.SEVERE
     reviewer: str = ""
     corrected_at: datetime | None = None
     reason_code: str | None = None   # "wrong_sku", "hallucinated", "missed", "unit_error"
+
+    @field_validator("old_confidence", mode="before")
+    @classmethod
+    def _coerce_old_confidence(cls, v: Any) -> Confidence:
+        return Confidence.coerce(v)
 
 
 class ReviewState(BaseModel):
@@ -233,29 +308,34 @@ class CanonicalLead(BaseModel):
 # is caught downstream by the rep. So identity fields sit high and descriptive
 # fields sit low. Tune these from the calibration report, not by vibes.
 
-THRESHOLDS: dict[str, float] = {
-    "_default":                         0.80,
-    "is_lead":                          0.90,
-    "customer.company_name":            0.85,
-    "customer.primary_contact.email":   0.95,
-    "customer.primary_contact.phone":   0.95,
-    "customer.customer_type":           0.75,
-    "project.requested_delivery":       0.85,
-    "project.quote_deadline":           0.85,
-    "project.budget_low":               0.80,
-    "project.budget_high":              0.80,
-    "line_items[].matched_sku":         0.90,   # fuzzy match, expensive to get wrong
-    "line_items[].quantity":            0.92,   # a qty error scales the whole quote
-    "line_items[].dimensions.width_in": 0.85,
-    "line_items[].dimensions.depth_in": 0.85,
-    "line_items[].dimensions.height_in": 0.85,
-    "line_items[].material":            0.70,
-    "line_items[].finish":              0.65,
-    "line_items[].com_fabric":          0.65,
+# The MINIMUM confidence level a field must reach to auto-commit. Identity fields
+# sit high (a wrong email is unrecoverable); descriptive fields sit low (a wrong
+# finish is caught downstream). Tune these from the calibration report — moving a
+# field's minimum level grows or shrinks the review queue, which is the tunable-
+# queue demo. Values are Confidence levels, not floats.
+THRESHOLDS: dict[str, Confidence] = {
+    "_default":                          Confidence.HIGH,
+    "is_lead":                           Confidence.HIGH,
+    "customer.company_name":             Confidence.HIGH,
+    "customer.primary_contact.email":    Confidence.CERTAIN,   # unrecoverable if wrong
+    "customer.primary_contact.phone":    Confidence.CERTAIN,
+    "customer.customer_type":            Confidence.MEDIUM,
+    "project.requested_delivery":        Confidence.HIGH,
+    "project.quote_deadline":            Confidence.HIGH,
+    "project.budget_low":                Confidence.MEDIUM,
+    "project.budget_high":               Confidence.MEDIUM,
+    "line_items[].matched_sku":          Confidence.HIGH,      # fuzzy match, costly to get wrong
+    "line_items[].quantity":             Confidence.HIGH,      # a qty error scales the whole quote
+    "line_items[].dimensions.width_in":  Confidence.MEDIUM,
+    "line_items[].dimensions.depth_in":  Confidence.MEDIUM,
+    "line_items[].dimensions.height_in": Confidence.MEDIUM,
+    "line_items[].material":             Confidence.MEDIUM,
+    "line_items[].finish":               Confidence.LOW,
+    "line_items[].com_fabric":           Confidence.LOW,
 }
 
 
-def threshold_for(path: str) -> float:
+def threshold_for(path: str) -> Confidence:
     """Index-insensitive lookup: line_items[3].quantity -> line_items[].quantity."""
     import re
     generic = re.sub(r"\[\d+\]", "[]", path)
@@ -342,5 +422,5 @@ def flatten_values(lead: CanonicalLead) -> dict[str, Any]:
     return flat
 
 
-def flatten_confidences(lead: CanonicalLead) -> dict[str, float]:
+def flatten_confidences(lead: CanonicalLead) -> dict[str, Confidence]:
     return {path: f.confidence for path, f in iter_extracted(lead)}
