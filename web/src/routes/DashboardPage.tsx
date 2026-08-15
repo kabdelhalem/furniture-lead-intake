@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api } from "../api";
+import type { Calibration, ConfidenceLevel } from "../types";
 import { formatMoney, formatPct } from "../lib/format";
 import { ErrorNote, Spinner } from "../components/ui";
 
@@ -104,10 +105,124 @@ export default function DashboardPage() {
               ]}
             />
           </div>
+
+          <ReliabilityPanel />
         </>
       )}
     </div>
   );
+}
+
+// ---- confidence reliability (offline, vs ground truth) --------------------
+const BAR_FILL: Record<ConfidenceLevel, string> = {
+  certain: "bg-commit",
+  high: "bg-commit/75",
+  medium: "bg-review/80",
+  low: "bg-review",
+  severe: "bg-alarm",
+};
+
+function ReliabilityPanel() {
+  // Expensive (replays the whole corpus) and effectively static, so keep it warm.
+  const q = useQuery({
+    queryKey: ["calibration"],
+    queryFn: () => api.calibration(),
+    staleTime: 10 * 60 * 1000,
+  });
+
+  return (
+    <section className="card p-5">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div>
+          <p className="eyebrow">Proof it knows what it knows</p>
+          <h2 className="font-display text-lg font-semibold">Confidence reliability</h2>
+        </div>
+        {q.data && (
+          <p className="text-sm text-ink-soft">
+            Overall <span className="font-semibold text-ink">{formatPct(q.data.overall.accuracy)}</span>{" "}
+            correct · {q.data.overall.correct}/{q.data.overall.n} labelled fields
+          </p>
+        )}
+      </div>
+      <p className="mt-1 max-w-2xl text-sm text-ink-soft">
+        How often each confidence level was actually right, checked against authored ground truth.
+        Near-perfect at <b>certain</b>/<b>high</b> and low at <b>severe</b> means the confidence is
+        honest — that's what makes auto-committing the sure fields safe and sending the rest to review.
+      </p>
+
+      {q.isLoading ? (
+        <Spinner label="Scoring the corpus against ground truth…" />
+      ) : q.isError || !q.data ? (
+        <p className="mt-4 text-sm text-review-ink">Couldn't load the reliability report.</p>
+      ) : (
+        <ReliabilityChart data={q.data} />
+      )}
+    </section>
+  );
+}
+
+function ReliabilityChart({ data }: { data: Calibration }) {
+  const inversion = findInversion(data.levels);
+  return (
+    <>
+      {!data.monotonic && inversion && (
+        <div className="mt-3 flex items-start gap-2 rounded-md border border-review/30 bg-review-bg/50 px-3 py-2 text-xs leading-relaxed text-review-ink">
+          <span aria-hidden className="mt-0.5">▲</span>
+          <span>
+            <b>Inversion detected.</b> <span className="capitalize">{inversion.lower}</span> (n=
+            {inversion.lowerN}) scored higher than <span className="capitalize">{inversion.higher}</span>.
+            With so few fields at that level, a single case swings the rate — it's small-sample noise,
+            not the ladder breaking.
+          </span>
+        </div>
+      )}
+
+      <div className="mt-6 flex items-end gap-2 pt-5 sm:gap-4">
+        {data.levels.map((l) => {
+          const h = l.accuracy ?? 0;
+          return (
+            <div key={l.level} className="flex flex-1 flex-col items-center gap-2">
+              <div className="flex h-40 w-full items-end">
+                <div
+                  className={`relative mx-auto w-full max-w-[60px] rounded-t-md transition-[height] duration-500 ${
+                    l.accuracy === null ? "bg-line" : BAR_FILL[l.level]
+                  }`}
+                  style={{ height: `${Math.max(h * 100, l.accuracy === null ? 0 : 3)}%` }}
+                >
+                  <span className="absolute -top-5 left-1/2 -translate-x-1/2 whitespace-nowrap text-sm font-semibold tabular-nums text-ink">
+                    {l.accuracy === null ? "—" : formatPct(l.accuracy)}
+                  </span>
+                </div>
+              </div>
+              <div className="text-center">
+                <p className="text-sm font-medium capitalize text-ink">{l.level}</p>
+                <p className="font-mono text-[10px] text-ink-faint">
+                  {l.accuracy === null ? "no data" : `${l.correct}/${l.n}`}
+                </p>
+                <p className="font-mono text-[10px] text-ink-faint">n={l.n}</p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+// The first lower level that out-performs a higher one (drives the inversion note).
+function findInversion(
+  levels: Calibration["levels"],
+): { higher: string; lower: string; lowerN: number } | null {
+  for (let i = 0; i < levels.length; i++) {
+    const a = levels[i];
+    if (a.accuracy === null) continue;
+    for (let j = i + 1; j < levels.length; j++) {
+      const b = levels[j];
+      if (b.accuracy === null) continue;
+      if (b.accuracy > a.accuracy) return { higher: a.level, lower: b.level, lowerN: b.n };
+    }
+  }
+  return null;
 }
 
 function ArcGauge({ value }: { value: number }) {

@@ -205,6 +205,20 @@ export interface IngestRawResult {
   source: SourceDoc[];
 }
 
+// GET /calibration — offline confidence reliability vs. ground truth.
+export interface CalibrationLevel {
+  level: ConfidenceLevel;
+  n: number;
+  correct: number;
+  accuracy: number | null; // null when n === 0
+}
+
+export interface Calibration {
+  levels: CalibrationLevel[]; // ladder order: certain → severe
+  overall: { n: number; correct: number; accuracy: number };
+  monotonic: boolean; // false when a lower level out-performs a higher one
+}
+
 export interface ReviewResult {
   lead_id: string;
   status: string;

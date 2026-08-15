@@ -1,4 +1,5 @@
 import type {
+  Calibration,
   CanonicalLead,
   ConfidenceLevel,
   Dashboard,
@@ -75,6 +76,10 @@ export const api = {
     }),
 
   dashboard: () => request<Dashboard>("/dashboard"),
+
+  // Offline reliability: per-level accuracy vs ground truth. Replays the whole
+  // curated corpus server-side, so it's a few seconds, not instant.
+  calibration: () => request<Calibration>("/calibration"),
 
   // The ingested view of a lead's artifacts: parsed text + located blocks.
   source: (id: string) => request<SourceDoc[]>(`/leads/${id}/source`),
