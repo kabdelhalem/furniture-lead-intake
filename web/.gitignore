@@ -1,0 +1,12 @@
+node_modules
+dist
+.vite
+
+# tsc -b (composite) byproducts
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+
+# logs / editor
+*.log
+.DS_Store
