@@ -155,6 +155,16 @@ def test_artifact_raw_404_for_unknown(client):
     assert client.get("/artifacts/nope::nope.pdf/raw").status_code == 404
 
 
+def test_calibration_reports_per_level_accuracy(client):
+    cal = client.get("/calibration").json()
+    assert [r["level"] for r in cal["levels"]] == \
+        ["certain", "high", "medium", "low", "severe"]
+    assert cal["overall"]["n"] == 239          # the curated scored fields
+    by = {r["level"]: r for r in cal["levels"]}
+    assert by["certain"]["accuracy"] >= 0.9     # the top of the ladder is trustworthy
+    assert isinstance(cal["monotonic"], bool)
+
+
 def test_observability_reflects_reviews(tmp_path_factory):
     cdir = tmp_path_factory.mktemp("corpus")
     from src.corpus.generate import generate
