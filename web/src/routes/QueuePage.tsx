@@ -164,7 +164,7 @@ export default function QueuePage() {
             <span className="eyebrow">Company</span>
             <span className="eyebrow">Segment</span>
             <span className="eyebrow">Priority</span>
-            <span className="eyebrow">Confidence</span>
+            <span className="eyebrow">Auto-commit</span>
             <span className="eyebrow text-right">Status</span>
           </li>
           {shown.map((l) => (
