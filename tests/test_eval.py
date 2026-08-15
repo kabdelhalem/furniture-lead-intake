@@ -52,12 +52,13 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 # --------------------------------------------------------------------------
 
 @pytest.fixture(scope="session")
-def corpus_dir() -> pathlib.Path:
-    cdir = REPO_ROOT / "corpus"
-    if not (cdir / "ground_truth").is_dir():
-        from src.corpus.generate import generate
-        generate(cdir)
-    return cdir
+def corpus_dir(tmp_path_factory) -> pathlib.Path:
+    # Curated-only corpus (the 15 scored leads). Renders byte-identically to the
+    # real corpus, so it still hits the committed cache; isolated + deterministic.
+    d = tmp_path_factory.mktemp("corpus")
+    from src.corpus.generate import generate
+    generate(d, synthetic=0)
+    return d
 
 
 @pytest.fixture(scope="session")
@@ -322,7 +323,9 @@ def test_meta_keys_excluded_from_field_accuracy(truths):
 # --------------------------------------------------------------------------
 
 def test_evaluate_perfect_corpus(truths, corpus_dir):
+    from src.dedup import mark_duplicates
     predicted = {lid: build_lead(t) for lid, t in truths.items()}
+    mark_duplicates(list(predicted.values()))   # dedup, as run_corpus does
     report = evaluate(predicted, corpus_dir)
 
     assert isinstance(report, EvalReport)
@@ -335,9 +338,10 @@ def test_evaluate_perfect_corpus(truths, corpus_dir):
     assert report.calibration_total == 11
     assert report.missing_predictions == []
     assert report.gates_failed == []
-    # Both named gates ran and passed.
+    # All three named gates ran and passed.
     gate_ok = {g.name: g.ok for g in report.gate_checks}
     assert gate_ok["L011_quantity_null"] is True
+    assert gate_ok["L012_deduplicated"] is True
     assert gate_ok["L013_not_a_lead"] is True
 
 

@@ -20,6 +20,7 @@ import pathlib
 import sys
 from datetime import datetime
 
+from .dedup import mark_duplicates
 from .eval import evaluate
 from .eval import _print_report  # noqa: PLC2701 — internal formatter, reused intentionally
 from .ingest import ingest_file
@@ -71,6 +72,9 @@ def run_corpus(
         totals.cost_usd = round(totals.cost_usd + llm.metrics.cost_usd, 6)
         totals.model_calls += llm.metrics.model_calls
 
+    # Cross-lead dedup: a resubmission (L012 of L001) links back instead of
+    # entering the queue as a fresh lead. Order follows the manifest.
+    mark_duplicates(list(predicted.values()))
     return predicted, uncached, totals
 
 

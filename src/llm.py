@@ -158,6 +158,7 @@ class LLM:
         max_tokens: int = 4096,
         schema: dict[str, Any] | None = None,
         documents: list[dict[str, str]] | None = None,
+        doc_ids: list[str] | None = None,
     ) -> LLMResult:
         """One request/response.
 
@@ -166,10 +167,25 @@ class LLM:
         dicts (e.g. a scanned PDF) placed before the text — the OCR path for a
         scanned artifact sends the raw bytes to a vision-capable model here
         rather than shelling out to a local OCR engine.
+
+        `doc_ids` gives each document a STABLE cache-key surrogate (its artifact
+        id). A rendered scan is not byte-reproducible across processes, so keying
+        the cache on the raw bytes would miss on every regeneration; keying on the
+        stable id makes replay reproducible while the live call still sends the
+        real image.
         """
         model = TIER_MODELS[tier]
         request = self._build_request(model, system, user, max_tokens, schema, documents)
-        key = _request_key(request)
+        # Cache key: for document requests, swap the volatile base64 for the
+        # stable doc_ids so replay survives re-rendering. Text-only requests are
+        # unchanged, so existing cache entries keep their keys.
+        if documents and doc_ids is not None:
+            key_docs = [{"media_type": d["media_type"], "data_b64": did}
+                        for d, did in zip(documents, doc_ids)]
+            key = _request_key(
+                self._build_request(model, system, user, max_tokens, schema, key_docs))
+        else:
+            key = _request_key(request)
 
         cached = None if self.mode is LLMMode.LIVE else self._read_cache(key)
         if cached is not None:

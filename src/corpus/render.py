@@ -8,6 +8,7 @@ eval numbers stay reproducible across runs.
 from __future__ import annotations
 
 import random
+import zlib
 from email.message import EmailMessage
 from pathlib import Path
 
@@ -101,7 +102,10 @@ def render_pdf_scanned(payload: dict, out: Path) -> Path:
     This is the single most useful artifact in the corpus — it is the one that
     proves the router actually inspects the document instead of assuming.
     """
-    rng = random.Random(SEED + hash(out.stem) % 10_000)
+    # zlib.crc32 (not builtin hash(), which is per-process randomized) keeps the
+    # scanned image byte-reproducible across runs — the corpus and its recorded
+    # cache stay stable.
+    rng = random.Random(SEED + zlib.crc32(out.stem.encode()))
     W, H = 1700, 2200          # ~200 dpi letter
     img = Image.new("L", (W, H), 255)
     d = ImageDraw.Draw(img)

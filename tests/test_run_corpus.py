@@ -20,12 +20,13 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture(scope="session")
-def corpus_dir() -> pathlib.Path:
-    cdir = REPO_ROOT / "corpus"
-    if not (cdir / "manifest.json").exists():
-        from src.corpus.generate import generate
-        generate(cdir)
-    return cdir
+def corpus_dir(tmp_path_factory) -> pathlib.Path:
+    # Curated-only (15 leads) so counts are deterministic regardless of whether
+    # the synthetic volume leads have been recorded. Renders cache-compatibly.
+    d = tmp_path_factory.mktemp("corpus")
+    from src.corpus.generate import generate
+    generate(d, synthetic=0)
+    return d
 
 
 def test_ingest_lead_loads_all_artifacts_email_first(corpus_dir):

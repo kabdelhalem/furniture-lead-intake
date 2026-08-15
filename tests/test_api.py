@@ -21,16 +21,29 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture(scope="module")
-def client() -> TestClient:
-    # Ensure the corpus exists (the cache was recorded against it).
-    if not (REPO_ROOT / "corpus" / "manifest.json").exists():
-        from src.corpus.generate import generate
-        generate(REPO_ROOT / "corpus")
-    app = create_app(engine=init_db("sqlite://"), corpus_dir=REPO_ROOT / "corpus")
+def client(tmp_path_factory) -> TestClient:
+    # Curated-only corpus (15 leads) so /seed is deterministic and fully cached;
+    # renders byte-identically to the real corpus, so it hits the committed cache.
+    cdir = tmp_path_factory.mktemp("corpus")
+    from src.corpus.generate import generate
+    generate(cdir, synthetic=0)
+    app = create_app(engine=init_db("sqlite://"), corpus_dir=cdir)
     c = TestClient(app)
     seeded = c.post("/seed").json()
     assert seeded["loaded"] == 15 and seeded["skipped"] == [], seeded
     return c
+
+
+def test_simulate_inbox_runs_one_lead_curated(tmp_path_factory):
+    cdir = tmp_path_factory.mktemp("corpus")
+    from src.corpus.generate import generate
+    generate(cdir, synthetic=0)
+    app = create_app(engine=init_db("sqlite://"), corpus_dir=cdir)
+    c = TestClient(app)
+    assert c.get("/leads").json() == []
+    summary = c.post("/simulate-inbox", json={"lead_id": "L001"}).json()
+    assert summary["lead_id"] == "L001"
+    assert len(c.get("/leads").json()) == 1
 
 
 @pytest.fixture(autouse=True)
@@ -106,10 +119,37 @@ def test_threshold_slider_resizes_the_queue(client):
     client.put("/thresholds", json={"reset": True})
 
 
-def test_simulate_inbox_runs_one_lead():
-    app = create_app(engine=init_db("sqlite://"), corpus_dir=REPO_ROOT / "corpus")
-    c = TestClient(app)
-    assert c.get("/leads").json() == []              # empty to start
-    summary = c.post("/simulate-inbox", json={"lead_id": "L001"}).json()
-    assert summary["lead_id"] == "L001"
-    assert len(c.get("/leads").json()) == 1
+# --------------------------------------------------------------------------
+# Dedup + source preview
+# --------------------------------------------------------------------------
+
+def test_resubmission_is_deduplicated_on_seed(client):
+    # L012 is a resubmission of L001; seeding should link it, not queue it fresh.
+    l012 = client.get("/leads/L012").json()
+    assert l012["review"]["duplicate_of"] == "L001"
+    assert l012["review"]["status"] == "duplicate"
+
+
+def test_lead_source_returns_located_blocks(client):
+    src = client.get("/leads/L001/source").json()
+    assert src and src[0]["kind"] == "email"
+    assert any(b["locator"] for b in src[0]["blocks"])          # blocks carry locators
+    assert "dwhitfield@northgatelabs.com" in src[0]["text"]
+
+
+def test_lead_source_marks_scanned_fax_as_ocr(client):
+    src = client.get("/leads/L004/source").json()
+    fax = next(a for a in src if a["kind"] == "pdf_scanned")
+    assert fax["needs_ocr"] is True and fax["text"] == ""        # no text layer
+
+
+def test_artifact_raw_serves_the_original_file(client):
+    lead = client.get("/leads/L001").json()
+    aid = lead["source_artifacts"][0]["artifact_id"]            # "L001::L001.eml"
+    resp = client.get(f"/artifacts/{aid}/raw")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("message/rfc822")
+    assert b"Subject:" in resp.content                          # a real .eml
+
+def test_artifact_raw_404_for_unknown(client):
+    assert client.get("/artifacts/nope::nope.pdf/raw").status_code == 404

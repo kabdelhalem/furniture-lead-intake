@@ -38,6 +38,11 @@ class LeadSpec:
     # asserts these actually land below threshold — a model that is confidently
     # right here is getting lucky, and a model confidently wrong is dangerous.
     expect_low_confidence: list[str] = field(default_factory=list)
+    # Curated leads (the 15 named failure modes) are the scored eval backbone.
+    # Procedurally generated volume leads (src/corpus/synth.py) set this False:
+    # they populate the demo queue and are recorded, but stay out of the headline
+    # accuracy/calibration number.
+    curated: bool = True
 
 
 SPECS: list[LeadSpec] = [

@@ -319,7 +319,17 @@ def _gate_l013(pred: CanonicalLead) -> GateCheck:
     )
 
 
-_GATES = {"L011": _gate_l011, "L013": _gate_l013}
+def _gate_l012(pred: CanonicalLead) -> GateCheck:
+    got = pred.review.duplicate_of
+    return GateCheck(
+        name="L012_deduplicated",
+        lead_id="L012",
+        ok=got == "L001",
+        detail=f"review.duplicate_of = {got!r} (must be 'L001' — resubmit of L001)",
+    )
+
+
+_GATES = {"L011": _gate_l011, "L012": _gate_l012, "L013": _gate_l013}
 
 
 def evaluate(
@@ -335,6 +345,10 @@ def evaluate(
     report = EvalReport()
 
     for lead_id, truth in truths.items():
+        # Volume leads (curated=False) run through the pipeline for the demo but
+        # are not scored — the headline number stays the 15 named failure modes.
+        if not truth.get("curated", True):
+            continue
         pred = predicted.get(lead_id)
         if pred is None:
             report.missing_predictions.append(lead_id)
