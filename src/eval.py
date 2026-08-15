@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import pathlib
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -164,6 +165,18 @@ class EvalReport:
 _FLOAT_TOL = 0.01
 
 
+def _norm_str(s: str) -> str:
+    """Fold free-text casing, quotes, and whitespace before comparison.
+
+    Case and quoting are not extraction signals — a company name read verbatim
+    off an all-caps fax ("HALCYON HOSPITALITY GROUP") or a fabric quoted in the
+    source ("Maharam Mode 'Pumice'") is a correct read, not an error. Enum values
+    and numbers are compared exactly; this folding applies only to string vs
+    string. It changes comparison semantics, never the authoritative truth.
+    """
+    return re.sub(r"\s+", " ", re.sub(r"['\"]", "", s)).strip().lower()
+
+
 def _norm(v: Any) -> Any:
     """Coerce dates and enums to their comparable primitive form.
 
@@ -198,6 +211,9 @@ def values_equal(expected: Any, got: Any) -> bool:
 
     if isinstance(e, (int, float)) and isinstance(g, (int, float)):
         return abs(e - g) <= _FLOAT_TOL
+
+    if isinstance(e, str) and isinstance(g, str):
+        return _norm_str(e) == _norm_str(g)
 
     return e == g
 
