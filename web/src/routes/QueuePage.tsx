@@ -12,15 +12,71 @@ import {
   Spinner,
 } from "../components/ui";
 import { useToast } from "../components/Toast";
+import { Tooltip } from "../components/Tooltip";
 
 type Filter = "all" | "queue" | "approved";
+
+type SortKey = "company" | "segment" | "priority" | "autocommit" | "status";
+type Dir = "asc" | "desc";
+
+// A newly-picked column starts in its most useful direction.
+const DEFAULT_DIR: Record<SortKey, Dir> = {
+  company: "asc",
+  segment: "desc",
+  priority: "desc",
+  autocommit: "desc",
+  status: "asc",
+};
+
+const SEGMENT_RANK: Record<string, number> = {
+  enterprise: 3,
+  mid_market: 2,
+  smb: 1,
+  unclassified: 0,
+};
+const STATUS_RANK: Record<string, number> = {
+  pending: 0,
+  in_review: 1,
+  approved: 2,
+  rejected: 3,
+  duplicate: 4,
+};
+
+function compare(a: LeadSummary, b: LeadSummary, key: SortKey): number {
+  switch (key) {
+    case "company": {
+      // null company ("Unknown sender") always sorts last in ascending order —
+      // locale collation puts a punctuation sentinel first, so handle it here.
+      const an = a.company_name;
+      const bn = b.company_name;
+      if (!an && !bn) return 0;
+      if (!an) return 1;
+      if (!bn) return -1;
+      return an.localeCompare(bn, undefined, { sensitivity: "base" });
+    }
+    case "segment":
+      return (SEGMENT_RANK[a.segment] ?? -1) - (SEGMENT_RANK[b.segment] ?? -1);
+    case "priority":
+      return a.priority_score - b.priority_score;
+    case "autocommit":
+      return a.auto_commit_rate - b.auto_commit_rate;
+    case "status":
+      return (STATUS_RANK[a.review_status] ?? 9) - (STATUS_RANK[b.review_status] ?? 9);
+  }
+}
 
 export default function QueuePage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const toast = useToast();
-  const [filter, setFilter] = useState<Filter>("all");
+  const [filter, setFilter] = useState<Filter>("queue"); // land on what needs review
+  const [sort, setSort] = useState<{ key: SortKey; dir: Dir }>({ key: "priority", dir: "desc" });
   const [simId, setSimId] = useState<string>(CORPUS_LEAD_IDS[6]); // L007, the SKU-ambiguity one
+
+  const toggleSort = (key: SortKey) =>
+    setSort((s) =>
+      s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: DEFAULT_DIR[key] },
+    );
 
   const leadsQ = useQuery({
     queryKey: ["leads"],
@@ -71,10 +127,16 @@ export default function QueuePage() {
 
   const leads = leadsQ.data ?? [];
   const shown = useMemo(() => {
-    if (filter === "queue") return leads.filter((l) => l.flagged_count > 0);
-    if (filter === "approved") return leads.filter((l) => l.review_status === "approved");
-    return leads;
-  }, [leads, filter]);
+    const filtered =
+      filter === "queue"
+        ? leads.filter((l) => l.flagged_count > 0)
+        : filter === "approved"
+          ? leads.filter((l) => l.review_status === "approved")
+          : leads;
+    const sorted = [...filtered].sort((a, b) => compare(a, b, sort.key));
+    if (sort.dir === "desc") sorted.reverse();
+    return sorted;
+  }, [leads, filter, sort]);
 
   const inQueue = leads.filter((l) => l.flagged_count > 0).length;
 
@@ -85,8 +147,8 @@ export default function QueuePage() {
           <p className="eyebrow">The bench</p>
           <h1 className="mt-1 font-display text-3xl font-semibold tracking-tight">Review queue</h1>
           <p className="mt-1.5 max-w-xl text-sm text-ink-soft">
-            Inbound leads, highest priority first. The system auto-commits what it's sure of;
-            you touch only the flagged fields.
+            Leads that need a decision, highest priority first. Click a column to re-sort, or
+            open a lead to review its flagged fields.
           </p>
         </div>
 
@@ -160,20 +222,80 @@ export default function QueuePage() {
         <EmptyQueue onSeed={() => seed.mutate()} seeding={seed.isPending} />
       ) : (
         <ul className="mt-4 flex flex-col gap-2">
-          <li className="hidden grid-cols-[1.6fr_0.8fr_1fr_0.9fr_auto] gap-4 px-4 md:grid">
-            <span className="eyebrow">Company</span>
-            <span className="eyebrow">Segment</span>
-            <span className="eyebrow">Priority</span>
-            <span className="eyebrow">Auto-commit</span>
-            <span className="eyebrow text-right">Status</span>
+          <li className="hidden grid-cols-[1.6fr_0.8fr_1fr_0.9fr_auto] items-center gap-4 px-4 md:grid">
+            <SortHeader k="company" label="Company" sort={sort} onSort={toggleSort} />
+            <SortHeader
+              k="segment"
+              label="Segment"
+              sort={sort}
+              onSort={toggleSort}
+              tip="Deal-size band from the routing rules — Enterprise, Mid-market, or SMB."
+            />
+            <SortHeader
+              k="priority"
+              label="Priority"
+              sort={sort}
+              onSort={toggleSort}
+              tip="How soon to work this lead (0–100), set by deterministic routing rules — deal-size segment, deadline urgency, order value, and territory. Higher means work it sooner."
+            />
+            <SortHeader
+              k="autocommit"
+              label="Auto-commit"
+              sort={sort}
+              onSort={toggleSort}
+              tip="Share of this lead's fields captured with high confidence — no human needed. The rest are flagged for review."
+            />
+            <SortHeader k="status" label="Status" sort={sort} onSort={toggleSort} align="right" />
           </li>
-          {shown.map((l) => (
-            <QueueRow key={l.lead_id} lead={l} onOpen={() => navigate(`/leads/${l.lead_id}`)} />
-          ))}
+          {shown.length === 0 ? (
+            <li className="card px-4 py-10 text-center text-sm text-ink-soft">
+              No leads {filter === "queue" ? "need review" : "in this view"} right now.
+            </li>
+          ) : (
+            shown.map((l) => (
+              <QueueRow key={l.lead_id} lead={l} onOpen={() => navigate(`/leads/${l.lead_id}`)} />
+            ))
+          )}
         </ul>
       )}
     </div>
   );
+}
+
+function SortHeader({
+  k,
+  label,
+  sort,
+  onSort,
+  align,
+  tip,
+}: {
+  k: SortKey;
+  label: string;
+  sort: { key: SortKey; dir: Dir };
+  onSort: (k: SortKey) => void;
+  align?: "right";
+  tip?: string;
+}) {
+  const active = sort.key === k;
+  const btn = (
+    <button
+      onClick={() => onSort(k)}
+      aria-label={`Sort by ${label}${active ? (sort.dir === "asc" ? ", ascending" : ", descending") : ""}`}
+      className={`eyebrow flex w-full items-center gap-1 transition-colors hover:text-ink ${
+        align === "right" ? "justify-end" : ""
+      } ${active ? "text-ink" : ""}`}
+    >
+      {label}
+      <span
+        aria-hidden
+        className={`text-[8px] leading-none ${active ? "opacity-100" : "opacity-30"}`}
+      >
+        {active && sort.dir === "asc" ? "▲" : "▼"}
+      </span>
+    </button>
+  );
+  return tip ? <Tooltip content={tip}>{btn}</Tooltip> : btn;
 }
 
 function QueueRow({ lead, onOpen }: { lead: LeadSummary; onOpen: () => void }) {

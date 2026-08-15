@@ -9,6 +9,7 @@ import { REVIEWER } from "../lib/reviewer";
 import { formatMoney, humanize, relativeReceived, segmentLabel } from "../lib/format";
 import FieldRow from "../components/FieldRow";
 import SalesLeadView from "../components/SalesLeadView";
+import { InfoDot } from "../components/Tooltip";
 import { ErrorNote, ReviewStatusBadge, SegmentBadge, Spinner } from "../components/ui";
 import { useToast } from "../components/Toast";
 import { useMode } from "../lib/mode";
@@ -139,7 +140,23 @@ function LeadDetail({
 
       {/* summary strip */}
       <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <Stat label="Priority" value={String(lead.routing.priority_score)} accent />
+        <Stat
+          label="Priority"
+          value={String(lead.routing.priority_score)}
+          accent
+          tip={
+            <span>
+              <b>Why {lead.routing.priority_score}/100.</b> Priority is set by deterministic
+              routing rules — deal-size segment, deadline urgency, order value, and territory.
+              {lead.routing.rules_fired.length > 0 && (
+                <>
+                  {" "}
+                  Fired here: {lead.routing.rules_fired.join(", ")}.
+                </>
+              )}
+            </span>
+          }
+        />
         <Stat label="Auto-committed" value={total ? `${committed}/${total}` : "—"} />
         <Stat label="Flagged" value={String(flaggedRows.length)} warn={flaggedRows.length > 0} />
         <Stat label="Cost" value={formatMoney(lead.metrics.cost_usd)} />
@@ -357,11 +374,13 @@ function Stat({
   value,
   accent,
   warn,
+  tip,
 }: {
   label: string;
   value: string;
   accent?: boolean;
   warn?: boolean;
+  tip?: React.ReactNode;
 }) {
   return (
     <div
@@ -369,7 +388,10 @@ function Stat({
         warn ? "border-review/30 bg-review-bg/40" : "border-line bg-panel"
       }`}
     >
-      <p className="eyebrow">{label}</p>
+      <p className="eyebrow inline-flex items-center">
+        {label}
+        {tip && <InfoDot label={tip} />}
+      </p>
       <p
         className={`mt-1 font-display text-2xl font-semibold tabular-nums ${
           accent ? "text-brand-deep" : "text-ink"

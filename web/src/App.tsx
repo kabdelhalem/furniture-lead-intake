@@ -5,6 +5,7 @@ import DashboardPage from "./routes/DashboardPage";
 import ThresholdsPage from "./routes/ThresholdsPage";
 import { REVIEWER } from "./lib/reviewer";
 import { useMode } from "./lib/mode";
+import { Tooltip } from "./components/Tooltip";
 
 // Thresholds is a tuning tool — engineering only. The rest is shared.
 const NAV = [
@@ -16,25 +17,34 @@ const NAV = [
 function ModeToggle() {
   const { mode, setMode } = useMode();
   return (
-    <div
-      className="flex items-center rounded-full border border-line bg-panel-2 p-0.5"
-      role="group"
-      aria-label="View mode"
-      title="Switch between the salesperson view and the engineering god-view"
+    <Tooltip
+      content={
+        <span>
+          <b>Two views of the same lead.</b> In production each person sees one:{" "}
+          <b>Sales</b> is the salesperson's clean quote view; <b>Eng</b> is the internal
+          view with confidence levels, thresholds, evidence, and routing.
+        </span>
+      }
     >
-      {(["sales", "engineering"] as const).map((m) => (
-        <button
-          key={m}
-          onClick={() => setMode(m)}
-          aria-pressed={mode === m}
-          className={`rounded-full px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.1em] transition-colors ${
-            mode === m ? "bg-ink text-panel" : "text-ink-faint hover:text-ink-soft"
-          }`}
-        >
-          {m === "sales" ? "Sales" : "Eng"}
-        </button>
-      ))}
-    </div>
+      <div
+        className="flex items-center rounded-full border border-line bg-panel-2 p-0.5"
+        role="group"
+        aria-label="View mode"
+      >
+        {(["sales", "engineering"] as const).map((m) => (
+          <button
+            key={m}
+            onClick={() => setMode(m)}
+            aria-pressed={mode === m}
+            className={`rounded-full px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.1em] transition-colors ${
+              mode === m ? "bg-ink text-panel" : "text-ink-faint hover:text-ink-soft"
+            }`}
+          >
+            {m === "sales" ? "Sales" : "Eng"}
+          </button>
+        ))}
+      </div>
+    </Tooltip>
   );
 }
 
