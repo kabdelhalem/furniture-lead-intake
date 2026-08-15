@@ -23,13 +23,15 @@ from fastapi.responses import FileResponse
 from sqlalchemy import Engine
 
 from . import schema, store
+from .calibration import reliability
 from .dedup import fingerprint, mark_duplicate, mark_duplicates
+from .eval import load_truths
 from .ingest import ingest_file
 from .llm import LLM, LLMCacheMiss, LLMMode
 from .observability import summarize
 from .pipeline import apply_corrections, run_lead
 from .rawlead import build_artifacts
-from .run_corpus import DEMO_RECEIVED, _load_dotenv, ingest_lead
+from .run_corpus import DEMO_RECEIVED, _load_dotenv, ingest_lead, run_corpus
 from .schema import Correction, ReviewStatus, apply_policy
 
 # Rough demo ROI: a reviewer spends about this long eyeballing one field.
@@ -192,6 +194,15 @@ def create_app(
         summaries = store.list_leads(engine, status=None)
         leads = [store.get_lead(engine, s.lead_id) for s in summaries]
         return _dashboard([l for l in leads if l is not None])
+
+    # ---- confidence calibration vs ground truth ---------------------------
+    @app.get("/calibration")
+    def calibration() -> dict:
+        """Per-level accuracy against ground truth: is the confidence honest?
+        Runs the curated corpus (replaying the cache) and reports accuracy at
+        each level, plus whether it degrades monotonically down the ladder."""
+        predicted, _uncached, _totals = run_corpus(corpus_dir, llm_factory=llm_factory)
+        return reliability(predicted, load_truths(corpus_dir))
 
     # ---- calibration observability from review outcomes -------------------
     @app.get("/observability")
