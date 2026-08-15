@@ -1,4 +1,4 @@
-.PHONY: install corpus eval record test clean
+.PHONY: install corpus eval record test clean serve build-web build serve-prod
 
 # Install dependencies into the active environment.
 install:
@@ -29,3 +29,16 @@ clean:
 # Run the API dev server (factory form; seed via POST /seed once up).
 serve:
 	uvicorn --factory src.api:create_app --reload
+
+# Build the React SPA into web/dist (needs Node).
+build-web:
+	cd web && npm ci && npm run build
+
+# One-shot production build: deps + corpus + SPA. Run once on the box.
+build: install corpus build-web
+
+# Single-origin production server: API under /api, the built SPA at /.
+# Seeds the corpus on startup (replays the committed cache — no API key needed).
+# Bind localhost; put a reverse proxy (Caddy / Cloudflare Tunnel) in front for TLS.
+serve-prod:
+	uvicorn --factory src.api:create_site_app --host 127.0.0.1 --port 8000

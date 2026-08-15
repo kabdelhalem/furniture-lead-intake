@@ -115,18 +115,7 @@ def create_app(
     def seed() -> dict:
         """Run the whole corpus into the store (idempotent upsert), linking
         duplicate resubmissions across the batch before saving."""
-        import json
-        manifest = json.loads((corpus_dir / "manifest.json").read_text())
-        leads, skipped = [], []
-        for entry in manifest["leads"]:
-            try:
-                leads.append(_run(entry, corpus_dir, llm_factory))
-            except Exception:  # uncached in replay mode -> skip, don't 500 the seed
-                skipped.append(entry["lead_id"])
-        mark_duplicates(leads)
-        for lead in leads:
-            store.save_lead(engine, lead)
-        return {"loaded": len(leads), "skipped": skipped}
+        return seed_store(engine, corpus_dir, llm_factory)
 
     # ---- review queue -----------------------------------------------------
     @app.get("/leads")
@@ -239,9 +228,82 @@ def create_app(
     return app
 
 
+def create_site_app(
+    *,
+    engine: Engine | None = None,
+    corpus_dir: str | pathlib.Path = "./corpus",
+    dist_dir: str | pathlib.Path | None = None,
+    seed_on_start: bool = True,
+    **kwargs: Any,
+) -> FastAPI:
+    """Single-origin production app: the API under ``/api`` and the built React
+    SPA at ``/`` — same origin, so no CORS. This is the deploy entry point
+    (``uvicorn --factory src.api:create_site_app``); tests keep using the
+    root-routed ``create_app`` unchanged.
+
+    On startup it seeds the corpus (idempotent upsert), so a fresh boot serves a
+    populated queue by replaying the committed cache — no API key required.
+    """
+    from fastapi.staticfiles import StaticFiles
+    from starlette.exceptions import HTTPException as StarletteHTTPException
+
+    engine = engine or store.init_db()
+    corpus_dir = pathlib.Path(corpus_dir)
+    llm_factory = kwargs.get("llm_factory") or (lambda: LLM())
+    api = create_app(engine=engine, corpus_dir=corpus_dir, **kwargs)
+
+    class _SPA(StaticFiles):
+        """Serve built assets, falling back to index.html for client-side routes
+        (BrowserRouter deep links like /leads/L007 aren't real files)."""
+
+        async def get_response(self, path: str, scope):  # type: ignore[override]
+            try:
+                return await super().get_response(path, scope)
+            except StarletteHTTPException as exc:
+                if exc.status_code == 404:
+                    return await super().get_response("index.html", scope)
+                raise
+
+    site = FastAPI(title="Furniture lead intake — site")
+
+    if seed_on_start:
+        @site.on_event("startup")
+        def _seed_on_start() -> None:
+            seed_store(engine, corpus_dir, llm_factory)
+
+    # Order matters: /api must be registered before the greedy "/" mount.
+    site.mount("/api", api)
+    dist = (
+        pathlib.Path(dist_dir)
+        if dist_dir
+        else pathlib.Path(__file__).resolve().parents[1] / "web" / "dist"
+    )
+    if dist.is_dir():
+        site.mount("/", _SPA(directory=dist, html=True), name="spa")
+    return site
+
+
 # --------------------------------------------------------------------------
 # Helpers
 # --------------------------------------------------------------------------
+
+def seed_store(engine: Engine, corpus_dir: pathlib.Path, llm_factory) -> dict:
+    """Run the whole corpus into the store (idempotent upsert), linking duplicate
+    resubmissions across the batch. Shared by the ``/seed`` route and startup
+    seeding. A lead uncached in replay mode is skipped, never a hard failure."""
+    import json
+    corpus_dir = pathlib.Path(corpus_dir)
+    manifest = json.loads((corpus_dir / "manifest.json").read_text())
+    leads, skipped = [], []
+    for entry in manifest["leads"]:
+        try:
+            leads.append(_run(entry, corpus_dir, llm_factory))
+        except Exception:  # uncached in replay mode -> skip, don't 500 the seed
+            skipped.append(entry["lead_id"])
+    mark_duplicates(leads)
+    for lead in leads:
+        store.save_lead(engine, lead)
+    return {"loaded": len(leads), "skipped": skipped}
 
 def _corpus_lead(corpus_dir: pathlib.Path, lead_id: str) -> dict | None:
     import json
