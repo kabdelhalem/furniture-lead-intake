@@ -65,8 +65,8 @@ function Masthead() {
             </svg>
           </span>
           <span className="leading-tight">
-            <span className="block font-semibold tracking-tight">Review Bench</span>
-            <span className="eyebrow">Lead intake · per-field confidence</span>
+            <span className="block font-semibold tracking-tight">V Good Furniture</span>
+            <span className="eyebrow">Lead intake</span>
           </span>
         </NavLink>
 

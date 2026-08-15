@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, CORPUS_LEAD_IDS } from "../api";
@@ -71,6 +71,8 @@ export default function QueuePage() {
   const toast = useToast();
   const [filter, setFilter] = useState<Filter>("queue"); // land on what needs review
   const [sort, setSort] = useState<{ key: SortKey; dir: Dir }>({ key: "priority", dir: "desc" });
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState("");
 
   const toggleSort = (key: SortKey) =>
     setSort((s) =>
@@ -143,25 +145,40 @@ export default function QueuePage() {
   };
 
   const shown = useMemo(() => {
-    const filtered =
+    const byTab =
       filter === "queue"
         ? leads.filter((l) => l.flagged_count > 0)
         : filter === "approved"
           ? leads.filter((l) => l.review_status === "approved")
           : leads;
+    const q = query.trim().toLowerCase();
+    const filtered = q
+      ? byTab.filter(
+          (l) =>
+            (l.company_name ?? "").toLowerCase().includes(q) ||
+            l.lead_id.toLowerCase().includes(q),
+        )
+      : byTab;
     const sorted = [...filtered].sort((a, b) => compare(a, b, sort.key));
     if (sort.dir === "desc") sorted.reverse();
     return sorted;
-  }, [leads, filter, sort]);
+  }, [leads, filter, sort, query]);
 
   const inQueue = leads.filter((l) => l.flagged_count > 0).length;
+
+  // Pagination — reset to page 1 whenever the result set changes shape.
+  const PAGE_SIZE = 20;
+  const [page, setPage] = useState(1);
+  useEffect(() => setPage(1), [filter, query, sort]);
+  const totalPages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
+  const current = Math.min(page, totalPages);
+  const pageItems = shown.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE);
 
   return (
     <div className="animate-rise-in">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="eyebrow">The bench</p>
-          <h1 className="mt-1 font-display text-3xl font-semibold tracking-tight">Review queue</h1>
+          <h1 className="font-display text-3xl font-semibold tracking-tight">Review queue</h1>
           <p className="mt-1.5 max-w-xl text-sm text-ink-soft">
             Leads that need a decision, highest priority first. Click a column to re-sort, or
             open a lead to review its flagged fields.
@@ -190,8 +207,40 @@ export default function QueuePage() {
         </div>
       </div>
 
-      {/* filter tabs */}
-      <div className="mt-6 flex items-center gap-2 border-b border-line pb-3">
+      {/* filter tabs + inline search */}
+      <div className="mt-6 flex flex-wrap items-center gap-2 border-b border-line pb-3">
+        {searchOpen ? (
+          <div className="flex items-center gap-1.5 rounded-full border border-brand/40 bg-panel px-3 py-1 shadow-panel">
+            <SearchIcon />
+            <input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Escape" && (setQuery(""), setSearchOpen(false))}
+              placeholder="Search company or ID…"
+              className="w-44 bg-transparent text-sm text-ink placeholder:text-ink-faint focus:outline-none"
+            />
+            <button
+              onClick={() => {
+                setQuery("");
+                setSearchOpen(false);
+              }}
+              aria-label="Close search"
+              className="text-ink-faint hover:text-ink"
+            >
+              ✕
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setSearchOpen(true)}
+            aria-label="Search leads"
+            className="grid h-8 w-8 place-items-center rounded-full border border-line text-ink-soft transition-colors hover:bg-panel-2 hover:text-ink"
+          >
+            <SearchIcon />
+          </button>
+        )}
+
         {(
           [
             ["all", `All (${leads.length})`],
@@ -209,6 +258,12 @@ export default function QueuePage() {
             {label}
           </button>
         ))}
+
+        {query && (
+          <span className="ml-auto font-mono text-2xs text-ink-faint">
+            {shown.length} match{shown.length === 1 ? "" : "es"}
+          </span>
+        )}
       </div>
 
       {leadsQ.isLoading ? (
@@ -252,16 +307,81 @@ export default function QueuePage() {
           </li>
           {shown.length === 0 ? (
             <li className="card px-4 py-10 text-center text-sm text-ink-soft">
-              No leads {filter === "queue" ? "need review" : "in this view"} right now.
+              {query
+                ? `No leads match “${query}”.`
+                : `No leads ${filter === "queue" ? "need review" : "in this view"} right now.`}
             </li>
           ) : (
-            shown.map((l) => (
+            pageItems.map((l) => (
               <QueueRow key={l.lead_id} lead={l} onOpen={() => navigate(`/leads/${l.lead_id}`)} />
             ))
+          )}
+
+          {shown.length > PAGE_SIZE && (
+            <Pagination
+              page={current}
+              totalPages={totalPages}
+              from={(current - 1) * PAGE_SIZE + 1}
+              to={Math.min(current * PAGE_SIZE, shown.length)}
+              total={shown.length}
+              onPage={setPage}
+            />
           )}
         </ul>
       )}
     </div>
+  );
+}
+
+function Pagination({
+  page,
+  totalPages,
+  from,
+  to,
+  total,
+  onPage,
+}: {
+  page: number;
+  totalPages: number;
+  from: number;
+  to: number;
+  total: number;
+  onPage: (p: number) => void;
+}) {
+  return (
+    <li className="mt-2 flex items-center justify-between px-1 pt-2">
+      <span className="font-mono text-2xs text-ink-faint">
+        {from}–{to} of {total}
+      </span>
+      <div className="flex items-center gap-1.5">
+        <button
+          onClick={() => onPage(page - 1)}
+          disabled={page <= 1}
+          className="rounded-full border border-line-strong bg-panel px-3 py-1 text-sm font-medium text-ink-soft transition-colors hover:bg-panel-2 disabled:opacity-40"
+        >
+          ← Prev
+        </button>
+        <span className="px-1 font-mono text-2xs text-ink-soft">
+          Page {page} / {totalPages}
+        </span>
+        <button
+          onClick={() => onPage(page + 1)}
+          disabled={page >= totalPages}
+          className="rounded-full border border-line-strong bg-panel px-3 py-1 text-sm font-medium text-ink-soft transition-colors hover:bg-panel-2 disabled:opacity-40"
+        >
+          Next →
+        </button>
+      </div>
+    </li>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="11" cy="11" r="7" />
+      <path d="M21 21l-4.3-4.3" strokeLinecap="round" />
+    </svg>
   );
 }
 
@@ -369,7 +489,7 @@ function EmptyQueue({ onSeed, seeding }: { onSeed: () => void; seeding: boolean 
         </svg>
       </span>
       <div>
-        <p className="font-display text-lg font-semibold">The bench is empty</p>
+        <p className="font-display text-lg font-semibold">The queue is empty</p>
         <p className="mx-auto mt-1 max-w-sm text-sm text-ink-soft">
           Load the sample leads to fill the queue, or use “Simulate a new lead” above to watch
           them arrive one at a time.

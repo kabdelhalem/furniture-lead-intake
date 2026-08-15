@@ -75,7 +75,7 @@ export default function TryLeadPage() {
     <div className="animate-rise-in">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="eyebrow">The live curveball</p>
+          <p className="eyebrow">Live test</p>
           <h1 className="mt-1 font-display text-3xl font-semibold tracking-tight">Try a lead</h1>
           <p className="mt-1.5 max-w-xl text-sm text-ink-soft">
             Paste any inbound email — or upload a real PDF or spreadsheet — and watch the pipeline

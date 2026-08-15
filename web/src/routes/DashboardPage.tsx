@@ -8,7 +8,7 @@ import { ErrorNote, Spinner } from "../components/ui";
 export default function DashboardPage() {
   const q = useQuery({ queryKey: ["dashboard"], queryFn: () => api.dashboard() });
 
-  if (q.isLoading) return <Spinner label="Tallying the bench…" />;
+  if (q.isLoading) return <Spinner label="Tallying the leads…" />;
   if (q.isError || !q.data)
     return (
       <ErrorNote
@@ -23,7 +23,7 @@ export default function DashboardPage() {
 
   return (
     <div className="animate-rise-in">
-      <p className="eyebrow">The bench, at a glance</p>
+      <p className="eyebrow">At a glance</p>
       <h1 className="mt-1 font-display text-3xl font-semibold tracking-tight">Dashboard</h1>
       <p className="mt-1.5 max-w-xl text-sm text-ink-soft">
         What the confidence layer buys you: the share of fields committed with no human, and the

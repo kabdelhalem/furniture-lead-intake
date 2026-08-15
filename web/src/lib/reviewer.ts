@@ -2,7 +2,7 @@
 // is hardcoded, and rides along on every correction so the audit trail is real.
 export const REVIEWER = {
   name: "Dana Reyes",
-  role: "Intake review",
+  role: "Reviewer",
   initials: "DR",
   id: "dana.reyes",
 } as const;
