@@ -121,11 +121,13 @@ def render_source(artifacts: list[IngestedArtifact]) -> str:
     return "\n".join(parts).strip()
 
 
+def _vision_artifacts(artifacts: list[IngestedArtifact]) -> list[IngestedArtifact]:
+    return [a for a in artifacts if a.needs_ocr and a.raw_b64 and a.media_type]
+
+
 def _documents(artifacts: list[IngestedArtifact]) -> list[dict[str, str]]:
-    return [
-        {"media_type": a.media_type, "data_b64": a.raw_b64}
-        for a in artifacts if a.needs_ocr and a.raw_b64 and a.media_type
-    ]
+    return [{"media_type": a.media_type, "data_b64": a.raw_b64}
+            for a in _vision_artifacts(artifacts)]
 
 
 # --------------------------------------------------------------------------
@@ -135,11 +137,13 @@ def _documents(artifacts: list[IngestedArtifact]) -> list[dict[str, str]]:
 def extract(artifacts: list[IngestedArtifact], llm: LLM) -> ExtractionResult:
     """FAST-tier read of a lead's artifacts into a raw ExtractionResult."""
     source = render_source(artifacts)
+    vision = _vision_artifacts(artifacts)
     result = llm.complete(
         ModelTier.FAST,
         system=_EXTRACT_SYSTEM,
         user=source,
         documents=_documents(artifacts) or None,
+        doc_ids=[a.artifact_id for a in vision] or None,
         max_tokens=4096,
     )
     return ExtractionResult.model_validate(_loads(result.text))

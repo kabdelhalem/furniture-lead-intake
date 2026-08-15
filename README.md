@@ -10,10 +10,59 @@ about, not the whole record.
 ## How it works
 
 ```
-ingest ─▶ extract ─▶ assemble ─▶ route ─▶ review
-(6 fmts)  (LLM)      (typing +           (rules)   (human-in-the-loop,
-                     matching +                     interrupt/resume)
-                     confidence)
+┌─ PHASE 1  Ingest ─────────────────────────────────────────────────────────────┐
+│   Inbound artifacts for one lead:                                             │
+│     email   pdf   scanned-fax   xlsx   dxf   transcript                       │
+│       └───────┴────────┬─────────┴──────┴──────┘                              │
+│                        ▼                                                      │
+│   ingest ──▶ IngestedArtifact - located blocks ("Sheet1!C14", "body line 7")  │
+│              a scanned fax has no text layer ──▶ vision path (bytes to model) │
+└───────────────────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼  artifacts for one lead
+┌─ PHASE 2  LangGraph pipeline   (src/pipeline.py) ─────────────────────────────┐
+│   ┌──────────────┐   reconcile only when 2+ artifacts conflict (L014):        │
+│   │   extract    │──▶┌──────────────┐   Claude Sonnet - the pricier tier,     │
+│   │ Claude Haiku │   │  reconcile   │   spent only where ambiguity lives      │
+│   │ read+locate  │◀──│  conflicts   │                                         │
+│   └──────────────┘   └──────────────┘                                         │
+│         │  ExtractionResult - each field: value + level (certain..severe)     │
+│         ▼                                                                     │
+│   ┌────────────────────────────────────────────────────────────────┐          │
+│   │ assemble   (deterministic - no model call)                     │          │
+│   │   normalize    mm->in / dates / money / phones                 │          │
+│   │   match        fuzzy SKU vs 30-SKU catalog (+ alternatives)    │          │
+│   │   confidence   model level  +  deterministic signals           │          │
+│   │   apply_policy   level >= field-class minimum ?  auto : review │          │
+│   └────────────────────────────────────────────────────────────────┘          │
+│         │  CanonicalLead                                                      │
+│         ▼                                                                     │
+│   ┌───────────────────────────────────────────────────────────────────────┐   │
+│   │ route    -  rules only:  segment / territory / priority / rules_fired │   │
+│   └───────────────────────────────────────────────────────────────────────┘   │
+│         │                                                                     │
+│         ▼                                                                     │
+│   ┌──────────────┐   any flagged fields?                                      │
+│   │    review    │──── yes ──▶ interrupt ──▶ human corrects ──▶ resume        │
+│   │  interrupt/  │              (LangGraph checkpoint - a durable pause)      │
+│   │   resume     │──── none ──▶ auto-committed                                │
+│   └──────────────┘                                                            │
+└───────────────────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼  a routed, level-scored lead
+┌─ PHASE 3  Persist + serve ────────────────────────────────────────────────────┐
+│   ┌───────────────────────┐         ┌───────────────────────┐                 │
+│   │  Store  (SQLite)      │         │  FastAPI              │                 │
+│   │  ─────────────────    │◀───────▶│  ───────────          │                 │
+│   │  lead JSON = truth    │         │  /leads       queue   │                 │
+│   │  projection columns   │         │  /leads/{id}  detail  │                 │
+│   │  corrections          │         │  /dashboard   ROI     │                 │
+│   └───────────────────────┘         │  /thresholds  sliders │                 │
+│                                     └───────────────────────┘                 │
+│                                               │                               │
+│                                               ▼                               │
+│                                      React review UI                          │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 - **Ingest** (`src/ingest.py`) — every format becomes a uniform `IngestedArtifact`
@@ -42,17 +91,20 @@ replays offline with no API key.
 python -m venv .venv && source .venv/bin/activate
 make install          # dependencies
 make corpus           # generate the synthetic corpus from specs.py
-make test             # 220+ tests, all offline
+make test             # 250+ tests, all offline
 
 # Record model responses once (needs ANTHROPIC_API_KEY), then score offline:
 make record           # live calls -> writes cache/llm/  (commit it)
 make eval             # replays the cache, scores against ground truth
 ```
 
-`make eval` runs the pipeline over all 15 leads and prints field accuracy, a
-calibration pass-rate, the L011/L013 gates, and the run's token/cost total. It
-exits non-zero on a gate failure — a real CI-style check once the cache is
-recorded.
+The corpus is **105 leads**: 15 curated failure-mode leads that are the scored
+eval backbone, plus ~90 procedurally generated volume leads that make the review
+queue and dashboard feel like a real inbox (they run through the same pipeline
+but stay out of the headline accuracy number). `make eval` runs the whole corpus
+and prints field accuracy over the curated 15, a calibration pass-rate, the
+L011/L012/L013 gates, and the run's token/cost total. It exits non-zero on a gate
+failure — a real CI-style check once the cache is recorded.
 
 ## Three design decisions worth understanding
 

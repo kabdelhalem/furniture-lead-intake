@@ -179,6 +179,13 @@ def assemble(
         project=project,
         line_items=line_items,
     )
+    # Carry the run's token/cost/tier accounting onto the lead so the dashboard
+    # shows a real cost per lead. apply_policy fills the field counts next.
+    if metrics is not None:
+        lead.metrics.extraction_ms = metrics.extraction_ms
+        lead.metrics.total_tokens = metrics.total_tokens
+        lead.metrics.cost_usd = metrics.cost_usd
+        lead.metrics.model_calls = metrics.model_calls
     return apply_policy(lead)
 
 

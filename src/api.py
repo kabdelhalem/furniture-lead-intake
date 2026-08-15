@@ -19,9 +19,12 @@ import pathlib
 from typing import Any
 
 from fastapi import Body, FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy import Engine
 
 from . import schema, store
+from .dedup import fingerprint, mark_duplicate, mark_duplicates
+from .ingest import ingest_file
 from .llm import LLM
 from .pipeline import apply_corrections
 from .run_corpus import DEMO_RECEIVED, ingest_lead
@@ -60,24 +63,26 @@ def create_app(
         if entry is None:
             raise HTTPException(404, f"no corpus lead {lead_id!r}")
         lead = _run(entry, corpus_dir, llm_factory)
+        _dedup_against_store(engine, lead)
         store.save_lead(engine, lead)
         return _summary_dict(store.list_leads(engine, status=None), lead_id)
 
     @app.post("/seed")
     def seed() -> dict:
-        """Run the whole corpus into the store (idempotent upsert)."""
+        """Run the whole corpus into the store (idempotent upsert), linking
+        duplicate resubmissions across the batch before saving."""
         import json
         manifest = json.loads((corpus_dir / "manifest.json").read_text())
-        loaded, skipped = 0, []
+        leads, skipped = [], []
         for entry in manifest["leads"]:
             try:
-                lead = _run(entry, corpus_dir, llm_factory)
+                leads.append(_run(entry, corpus_dir, llm_factory))
             except Exception:  # uncached in replay mode -> skip, don't 500 the seed
                 skipped.append(entry["lead_id"])
-                continue
+        mark_duplicates(leads)
+        for lead in leads:
             store.save_lead(engine, lead)
-            loaded += 1
-        return {"loaded": loaded, "skipped": skipped}
+        return {"loaded": len(leads), "skipped": skipped}
 
     # ---- review queue -----------------------------------------------------
     @app.get("/leads")
@@ -109,6 +114,35 @@ def create_app(
             "corrections": len(applied),
             "flagged_remaining": len(lead.review.flagged_paths),
         }
+
+    # ---- source artifacts (source-vs-extraction preview) ------------------
+    @app.get("/leads/{lead_id}/source")
+    def lead_source(lead_id: str) -> list[dict]:
+        """The ingested view of a lead's artifacts: linearized text + located
+        blocks, so the UI can show the parsed source and highlight the evidence
+        locators the extracted fields point at."""
+        entry = _corpus_lead(corpus_dir, lead_id)
+        if entry is None:
+            raise HTTPException(404, f"no corpus lead {lead_id!r}")
+        out = []
+        for a in entry["artifacts"]:
+            art = ingest_file(corpus_dir / "inbox" / a["filename"], a["kind"], a["artifact_id"])
+            out.append({
+                "artifact_id": art.artifact_id, "kind": art.kind,
+                "filename": art.filename, "needs_ocr": art.needs_ocr,
+                "text": art.text,
+                "blocks": [{"locator": b.locator, "text": b.text} for b in art.blocks],
+            })
+        return out
+
+    @app.get("/artifacts/{artifact_id}/raw")
+    def artifact_raw(artifact_id: str):
+        """The raw original file (PDF/xlsx/eml/txt) for embed/download."""
+        safe = pathlib.Path(artifact_id.split("::")[-1]).name   # basename, no traversal
+        path = corpus_dir / "inbox" / safe
+        if not path.is_file():
+            raise HTTPException(404, f"no artifact file {safe!r}")
+        return FileResponse(path, media_type=_media_type(safe), filename=safe)
 
     # ---- dashboard --------------------------------------------------------
     @app.get("/dashboard")
@@ -151,6 +185,35 @@ def _corpus_lead(corpus_dir: pathlib.Path, lead_id: str) -> dict | None:
     import json
     manifest = json.loads((corpus_dir / "manifest.json").read_text())
     return next((l for l in manifest["leads"] if l["lead_id"] == lead_id), None)
+
+
+_MEDIA = {
+    ".pdf": "application/pdf",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".dxf": "image/vnd.dxf",
+    ".eml": "message/rfc822",
+    ".txt": "text/plain",
+}
+
+
+def _media_type(name: str) -> str:
+    return _MEDIA.get(pathlib.Path(name).suffix.lower(), "application/octet-stream")
+
+
+def _dedup_against_store(engine: Engine, lead) -> None:
+    """Link `lead` to an already-stored duplicate (a resubmission), if any."""
+    if lead.is_lead.value is not True:
+        return
+    seen: dict[str, str] = {}
+    for s in store.list_leads(engine, status=None):
+        if s.lead_id == lead.lead_id:
+            continue
+        other = store.get_lead(engine, s.lead_id)
+        if other is not None:
+            seen.setdefault(fingerprint(other), s.lead_id)
+    dup = seen.get(fingerprint(lead))
+    if dup is not None:
+        mark_duplicate(lead, dup)
 
 
 def _run(entry: dict, corpus_dir: pathlib.Path, llm_factory):
