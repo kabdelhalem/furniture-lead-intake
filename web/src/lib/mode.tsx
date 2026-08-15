@@ -16,7 +16,14 @@ interface ModeApi {
 
 const ModeContext = createContext<ModeApi | null>(null);
 
-function readStored(): Mode {
+function readInitial(): Mode {
+  // A ?mode= query param wins (shareable deep link), then the stored choice.
+  try {
+    const q = new URLSearchParams(window.location.search).get("mode");
+    if (q === "engineering" || q === "sales") return q;
+  } catch {
+    /* no window/search — fall through */
+  }
   try {
     return localStorage.getItem(KEY) === "engineering" ? "engineering" : "sales";
   } catch {
@@ -25,7 +32,7 @@ function readStored(): Mode {
 }
 
 export function ModeProvider({ children }: { children: React.ReactNode }) {
-  const [mode, setModeState] = useState<Mode>(readStored);
+  const [mode, setModeState] = useState<Mode>(readInitial);
 
   useEffect(() => {
     try {
