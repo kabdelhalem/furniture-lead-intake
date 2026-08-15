@@ -27,9 +27,19 @@ from .llm import LLM, ModelTier
 
 _JSON_SHAPE = """
 Return a single JSON object. Every leaf marked <field> is an object:
-  {"value": <verbatim string or null>, "certainty": <0..1>,
+  {"value": <verbatim string or null>,
+   "certainty": "<certain|high|medium|low|severe>",
    "locator": "<where you found it, e.g. 'body line 7' or 'Takeoff!C14'>",
    "snippet": "<the source text you read it from>", "conflict": <true|false>}
+
+certainty is a LEVEL, not a number — report how sure you are that you read this
+field correctly:
+  certain = stated explicitly and unambiguously, verbatim
+  high    = clearly stated, minor interpretation
+  medium  = inferred or lightly ambiguous
+  low     = hedged, unclear, or you had to guess between readings
+  severe  = you are extracting this against real doubt (conflicting or garbled)
+Do not fabricate certainty — a hedged or inferred value must not be "high".
 
 Shape:
 {

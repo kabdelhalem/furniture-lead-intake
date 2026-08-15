@@ -1,139 +1,140 @@
 """
-Tests for the confidence scorer.
+Tests for the confidence scorer (ordinal levels).
 
-The assertions are framed against the schema's real per-field thresholds
-(`threshold_for`) rather than magic numbers: what matters is not the exact score
-but which side of the review bar the corpus's decisive fields land on. A clean
-SKU auto-commits; an ambiguous or off-nominal one is flagged; a hedged quantity
-is flagged; a cross-artifact conflict is flagged.
+Assertions are framed against the schema's real per-field-class minimum levels
+(`threshold_for`): what matters is which side of the auto-commit bar the corpus's
+decisive fields land on. A clean SKU auto-commits; an ambiguous or off-nominal
+one is flagged; a hedged quantity is flagged; a cross-artifact conflict drops to
+SEVERE, the alarm floor.
 """
 
 from __future__ import annotations
 
 from src.confidence import Signals, score
-from src.schema import threshold_for
+from src.schema import Confidence, threshold_for
 
 
 def _auto(path: str, s: Signals) -> bool:
-    """Would apply_policy auto-commit this field?"""
+    """Would apply_policy auto-commit this field? (level >= the field's minimum)"""
     return score(path, s) >= threshold_for(path)
 
 
 # --------------------------------------------------------------------------
-# Absent value
+# Absent value -> the alarm floor
 # --------------------------------------------------------------------------
 
-def test_absent_value_scores_zero():
-    assert score("customer.company_name", Signals(present=False)) == 0.0
+def test_absent_value_is_severe():
+    assert score("customer.company_name", Signals(present=False)) is Confidence.SEVERE
     # ...even if the model claimed certainty. No value, no confidence.
-    assert score("line_items[0].quantity", Signals(present=False, model_certainty=0.99)) == 0.0
+    assert score("line_items[0].quantity",
+                 Signals(present=False, model_level=Confidence.CERTAIN)) is Confidence.SEVERE
 
 
 # --------------------------------------------------------------------------
-# Email / phone — format-gated identity fields (bar is 0.95)
+# Email / phone — format-gated identity fields (bar is CERTAIN)
 # --------------------------------------------------------------------------
 
 def test_valid_email_auto_commits():
-    s = Signals(model_certainty=0.85, regex_valid=True)
-    assert _auto("customer.primary_contact.email", s)
+    assert _auto("customer.primary_contact.email",
+                 Signals(model_level=Confidence.HIGH, regex_valid=True))
 
-def test_malformed_email_is_flagged():
-    s = Signals(model_certainty=0.99, regex_valid=False)
+def test_malformed_email_is_severe():
+    s = Signals(model_level=Confidence.CERTAIN, regex_valid=False)
+    assert score("customer.primary_contact.email", s) is Confidence.SEVERE
     assert not _auto("customer.primary_contact.email", s)
 
 def test_unvalidated_email_is_flagged():
-    # No regex result available -> can't clear the strict 0.95 identity bar.
-    s = Signals(model_certainty=0.9, regex_valid=None)
-    assert not _auto("customer.primary_contact.email", s)
+    # No regex result -> capped at MEDIUM, can't clear the CERTAIN identity bar.
+    assert not _auto("customer.primary_contact.email",
+                     Signals(model_level=Confidence.HIGH, regex_valid=None))
 
 def test_valid_phone_auto_commits():
-    s = Signals(model_certainty=0.85, regex_valid=True)
-    assert _auto("customer.primary_contact.phone", s)
+    assert _auto("customer.primary_contact.phone",
+                 Signals(model_level=Confidence.HIGH, regex_valid=True))
 
 
 # --------------------------------------------------------------------------
-# SKU matching (bar is 0.90)
+# SKU matching (bar is HIGH)
 # --------------------------------------------------------------------------
 
 def test_clean_strong_sku_match_auto_commits():
-    # A well-separated exact match (matcher ~0.85) with a confident model.
-    s = Signals(model_certainty=0.85, match_score=0.85, ambiguous=False)
-    assert _auto("line_items[0].matched_sku", s)
+    assert _auto("line_items[0].matched_sku",
+                 Signals(match_score=0.85, ambiguous=False))
 
-def test_ambiguous_sku_is_flagged():
-    # L007: "the big walnut one" -> several MER-CT-*; matcher score ~0.40.
-    s = Signals(model_certainty=0.9, match_score=0.41, ambiguous=True)
+def test_ambiguous_sku_is_severe():
+    # L007: "the big walnut one" -> several MER-CT-*; a decline, not a guess.
+    s = Signals(match_score=0.41, ambiguous=True)
+    assert score("line_items[0].matched_sku", s) is Confidence.SEVERE
     assert not _auto("line_items[0].matched_sku", s)
-    assert score("line_items[0].matched_sku", s) <= 0.60
 
 def test_off_nominal_metric_sku_is_flagged():
     # L008: 1800mm = 70.87in must not snap confidently to the 72" SKU.
-    s = Signals(model_certainty=0.95, match_score=0.65, off_nominal=True)
+    s = Signals(match_score=0.65, off_nominal=True)
+    assert score("line_items[0].matched_sku", s) is Confidence.MEDIUM
     assert not _auto("line_items[0].matched_sku", s)
 
 def test_borderline_clean_sku_gets_a_glance():
-    # A clean but weak match (low matcher score) should not auto-commit.
-    s = Signals(model_certainty=0.6, match_score=0.60, ambiguous=False)
-    assert not _auto("line_items[0].matched_sku", s)
+    assert not _auto("line_items[0].matched_sku", Signals(match_score=0.58))
 
 
 # --------------------------------------------------------------------------
-# Quantity (bar is 0.92 — a qty error scales the whole quote)
+# Quantity (bar is HIGH — a qty error scales the whole quote)
 # --------------------------------------------------------------------------
 
 def test_clean_confident_quantity_auto_commits():
-    s = Signals(model_certainty=0.95, normalized_ok=True, hedged=False)
-    assert _auto("line_items[0].quantity", s)
+    assert _auto("line_items[0].quantity",
+                 Signals(model_level=Confidence.HIGH, normalized_ok=True, hedged=False))
 
 def test_hedged_quantity_is_flagged():
     # L006: "four, maybe five".
-    s = Signals(model_certainty=0.9, normalized_ok=True, hedged=True)
+    s = Signals(model_level=Confidence.HIGH, normalized_ok=True, hedged=True)
+    assert score("line_items[0].quantity", s) is Confidence.LOW
     assert not _auto("line_items[0].quantity", s)
-    assert score("line_items[0].quantity", s) <= 0.60
 
 
 # --------------------------------------------------------------------------
-# Dates (bar is 0.85)
+# Dates (bar is HIGH)
 # --------------------------------------------------------------------------
 
 def test_parsed_date_auto_commits():
-    s = Signals(model_certainty=0.9, normalized_ok=True)
-    assert _auto("project.requested_delivery", s)
+    assert _auto("project.requested_delivery",
+                 Signals(model_level=Confidence.HIGH, normalized_ok=True))
 
-def test_unparsed_date_is_flagged():
-    s = Signals(model_certainty=0.9, normalized_ok=False)
-    assert not _auto("project.quote_deadline", s)
+def test_unparsed_date_is_severe():
+    assert score("project.quote_deadline",
+                 Signals(model_level=Confidence.HIGH, normalized_ok=False)) is Confidence.SEVERE
 
 
 # --------------------------------------------------------------------------
 # Cross-artifact agreement / conflict
 # --------------------------------------------------------------------------
 
-def test_conflict_flags_a_finish_that_would_otherwise_pass():
-    # L014: spec PDF says oat, qty sheet says slate. Finish bar is only 0.65,
-    # so a confident model would normally auto-commit — the conflict must not.
-    base = Signals(model_certainty=0.95)
+def test_conflict_drops_to_severe_and_flags_a_finish():
+    # L014: a finish that would auto-commit (bar is only LOW) must not, on conflict.
+    base = Signals(model_level=Confidence.HIGH)
     assert _auto("line_items[0].finish", base)                       # would pass
-    conflict = Signals(model_certainty=0.95, cross_artifact="conflict")
-    assert not _auto("line_items[0].finish", conflict)               # must not
+    conflict = Signals(model_level=Confidence.HIGH, cross_artifact="conflict")
+    assert score("line_items[0].finish", conflict) is Confidence.SEVERE
+    assert not _auto("line_items[0].finish", conflict)
 
-def test_agreement_corroborates():
-    lone = score("customer.company_name", Signals(model_certainty=0.7))
-    agree = score("customer.company_name", Signals(model_certainty=0.7, cross_artifact="agree"))
+def test_agreement_corroborates_one_rung():
+    lone = score("customer.company_name", Signals(model_level=Confidence.MEDIUM))
+    agree = score("customer.company_name",
+                  Signals(model_level=Confidence.MEDIUM, cross_artifact="agree"))
     assert agree > lone
+    assert agree is Confidence.HIGH
 
 
 # --------------------------------------------------------------------------
-# Bounds and determinism
+# Determinism / index-insensitivity
 # --------------------------------------------------------------------------
 
-def test_scores_are_bounded_and_deterministic():
-    s = Signals(model_certainty=0.8, regex_valid=True, cross_artifact="agree")
+def test_scores_are_levels_and_deterministic():
+    s = Signals(model_level=Confidence.HIGH, regex_valid=True, cross_artifact="agree")
     a = score("customer.primary_contact.email", s)
-    b = score("customer.primary_contact.email", s)
-    assert a == b
-    assert 0.0 <= a <= 1.0
+    assert a is score("customer.primary_contact.email", s)
+    assert isinstance(a, Confidence)
 
 def test_index_insensitive_path():
-    s = Signals(model_certainty=0.9, match_score=0.85)
+    s = Signals(match_score=0.85)
     assert score("line_items[0].matched_sku", s) == score("line_items[3].matched_sku", s)

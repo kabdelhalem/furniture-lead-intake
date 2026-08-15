@@ -35,6 +35,7 @@ from typing import Any
 
 from .schema import (
     CanonicalLead,
+    Confidence,
     flatten_confidences,
     flatten_values,
     threshold_for,
@@ -57,11 +58,11 @@ class FieldResult:
 
 @dataclass
 class CalibrationResult:
-    """One `expect_low_confidence` path: confidence must sit below its threshold."""
+    """One `expect_low_confidence` path: its level must sit below the field's bar."""
     path: str
-    confidence: float
-    threshold: float
-    ok: bool               # confidence < threshold
+    confidence: Confidence
+    threshold: Confidence
+    ok: bool               # confidence < threshold (by rank)
     present: bool = True    # False -> the path had no envelope in the prediction
 
 
@@ -257,7 +258,7 @@ def score_lead(predicted: CanonicalLead, truth: dict) -> LeadScore:
     calibration: list[CalibrationResult] = []
     for path in truth.get("expect_low_confidence", []):
         present = path in confidences
-        conf = confidences.get(path, 0.0)
+        conf = confidences.get(path, Confidence.SEVERE)
         thr = threshold_for(path)
         calibration.append(
             CalibrationResult(

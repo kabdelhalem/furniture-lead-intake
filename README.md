@@ -62,11 +62,16 @@ a synthetic eval set dies is: generate plausible documents, then hand-label them
 Going truth-first (`src/corpus/specs.py`) makes the labels correct by
 construction.
 
-**Confidence is per-field, and thresholds are per field *class*.** Getting a
-contact email wrong is unrecoverable — the quote goes to the wrong inbox. Getting
-a finish wrong is caught downstream by the rep. So `primary_contact.email` sits at
-0.95 and `finish` sits at 0.65 (`THRESHOLDS` in `schema.py`). Move a threshold and
-the review queue grows or shrinks — it's tunable, not hardcoded.
+**Confidence is an ordinal level, per field — not a float.** The ladder is
+**Certain > High > Medium > Low > Severe**. Levels beat numbers here for two
+reasons: models are poorly calibrated at emitting probabilities but decent at
+coarse buckets, and "High" is more legible to a sales VP than `0.87`. The model
+reports a level, and the deterministic signals promote or demote it (SEVERE is
+the alarm floor — where an ambiguous SKU, a hallucination risk, or a
+cross-artifact conflict lands). Thresholds are a per-field-*class* **minimum
+level**: `primary_contact.email` must reach `Certain` (a wrong email is
+unrecoverable), while `finish` only needs `Low` (a rep catches it downstream).
+Raise a field class's minimum and the review queue grows — tunable, not hardcoded.
 
 **`apply_policy()` is the only place that decides what a human sees.** Keeping it a
 pure function of confidence is what lets the review queue stay tunable. Note the

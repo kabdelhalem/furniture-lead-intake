@@ -14,18 +14,39 @@ harness and the UI without the model re-deciding anything downstream.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from .schema import Confidence
 
 
 class EField(BaseModel):
     """One read value: the raw source string, its provenance, and the model's
-    self-reported certainty. `value` is None when the source doesn't state it —
-    the model must never invent one (the L011 stance)."""
+    self-reported certainty LEVEL. `value` is None when the source doesn't state
+    it — the model must never invent one (the L011 stance)."""
     value: str | None = None
-    certainty: float = Field(0.5, ge=0.0, le=1.0)
+    certainty: Confidence = Confidence.MEDIUM
     locator: str | None = None       # "body line 7", "Takeoff!C14", "page 2"
     snippet: str | None = None       # verbatim source span, <=200 chars
     conflict: bool = False           # two artifacts disagree on this field (L014)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _wrap_bare_scalar(cls, v):
+        """Models sometimes collapse a field to a bare scalar (is_lead: true)
+        instead of the {"value": ...} object. Accept both — wrap a bare scalar,
+        and treat an explicit null as an empty (defaults) envelope."""
+        if v is None:
+            return {}
+        if not isinstance(v, dict):
+            return {"value": v}
+        return v
+
+    @field_validator("certainty", mode="before")
+    @classmethod
+    def _coerce_certainty(cls, v):
+        """The model reports a level ("high"/"low"); coerce that, and tolerate a
+        legacy numeric score from an older cached response."""
+        return Confidence.coerce(v) if v is not None else Confidence.MEDIUM
 
     @field_validator("value", mode="before")
     @classmethod
