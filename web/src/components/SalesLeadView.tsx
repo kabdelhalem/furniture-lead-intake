@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import type { CanonicalLead, Extracted, ReviewDecision } from "../types";
 import type { FieldRow as FieldRowT } from "../lib/fields";
 import { coreGroups, lineItemRows } from "../lib/fields";
 import { formatDate, formatMoney, formatValue, humanize, relativeReceived, segmentLabel } from "../lib/format";
 import CorrectionForm, { skuAlternatives } from "./CorrectionForm";
+import SourcePreview from "./SourcePreview";
 
 // Sales-facing names for a few fields whose engineering labels read wrong to a
 // salesperson. Everything else falls back to the row's own label.
@@ -68,44 +69,11 @@ export default function SalesLeadView({
   const contact = c.primary_contact;
   const needsReview = reviewRows.length > 0;
 
-  const customerCard = (
-    <RecordCard title="Customer">
-      <SalesField label="Company" path="customer.company_name" field={c.company_name} flaggedSet={flaggedSet} />
-      <SalesField label="Customer type" path="customer.customer_type" field={c.customer_type} flaggedSet={flaggedSet} format={(v) => humanize(v as string)} />
-      <SalesField label="Contact" path="customer.primary_contact.full_name" field={contact.full_name} flaggedSet={flaggedSet} />
-      <SalesField label="Email" path="customer.primary_contact.email" field={contact.email} flaggedSet={flaggedSet} />
-      <SalesField label="Phone" path="customer.primary_contact.phone" field={contact.phone} flaggedSet={flaggedSet} />
-      <PlainRow label="Billing" value={cityState(c.billing_city.value, c.billing_state.value)} />
-    </RecordCard>
-  );
-
-  const projectCard = (
-    <RecordCard title="Project">
-      <PlainRow label="Site" value={cityState(p.site_city.value, p.site_state.value)} />
-      <SalesField label="Requested delivery" path="project.requested_delivery" field={p.requested_delivery} flaggedSet={flaggedSet} format={(v) => formatDate(v as string)} />
-      <SalesField label="Quote deadline" path="project.quote_deadline" field={p.quote_deadline} flaggedSet={flaggedSet} format={(v) => formatDate(v as string)} />
-      <PlainRow label="Budget" value={budgetRange(p.budget_low.value, p.budget_high.value)} />
-      <SalesField label="Install required" path="project.install_required" field={p.install_required} flaggedSet={flaggedSet} />
-    </RecordCard>
-  );
-
-  const reviewSection = (
-    <section className="card border-l-[3px] border-l-review p-4">
-      <div className="flex items-center gap-2">
-        <span aria-hidden className="text-review">▲</span>
-        <h2 className="font-display text-lg font-semibold">Needs your review</h2>
-      </div>
-      <p className="mt-1 text-sm text-ink-soft">
-        We captured everything else with high confidence. Just confirm or fix these{" "}
-        {reviewRows.length === 1 ? "detail" : `${reviewRows.length} details`}.
-      </p>
-      <div className="mt-4 space-y-3">
-        {reviewRows.map((row) => (
-          <ReviewCard key={row.path} row={row} onDecision={onDecision} pending={pending} />
-        ))}
-      </div>
-    </section>
-  );
+  const [showSource, setShowSource] = useState(false);
+  const reviewRef = useRef<HTMLElement>(null);
+  const capturedRef = useRef<HTMLElement>(null);
+  const scrollTo = (ref: React.RefObject<HTMLElement>) =>
+    ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   return (
     <div className="animate-rise-in">
@@ -135,40 +103,86 @@ export default function SalesLeadView({
         <ReadyPill count={reviewRows.length} />
       </div>
 
-      {needsReview ? (
-        // Needs review: the record (Customer over Project) on the left, the
-        // review column on the right; on mobile they stack record-then-review.
-        // Line items sit full-width below.
-        <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] lg:items-start">
-          <div className="flex flex-col gap-4 lg:order-1">
-            {customerCard}
-            {projectCard}
+      {/* sticky sub-nav: jump between review and captured, open the original */}
+      <div className="sticky top-14 z-20 mt-5 flex flex-wrap items-center gap-2 border-y border-line bg-paper/90 py-2 backdrop-blur">
+        {needsReview && (
+          <button
+            onClick={() => scrollTo(reviewRef)}
+            className="inline-flex items-center gap-1.5 rounded-full border border-review/40 bg-review-bg px-3 py-1 text-sm font-medium text-review-ink transition-colors hover:brightness-[0.98]"
+          >
+            <span aria-hidden>▲</span> Needs review ({reviewRows.length})
+          </button>
+        )}
+        <button
+          onClick={() => scrollTo(capturedRef)}
+          className="rounded-full border border-line-strong bg-panel px-3 py-1 text-sm font-medium text-ink-soft transition-colors hover:bg-panel-2"
+        >
+          Captured details
+        </button>
+        <button
+          onClick={() => setShowSource(true)}
+          className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-ink px-3.5 py-1 text-sm font-medium text-panel transition-colors hover:bg-brand-deep"
+        >
+          <span aria-hidden>⧉</span> Preview original
+        </button>
+      </div>
+
+      {/* review band */}
+      {reviewRows.length > 0 ? (
+        <section ref={reviewRef} className="card mt-5 scroll-mt-28 border-l-[3px] border-l-review p-4">
+          <div className="flex items-center gap-2">
+            <span aria-hidden className="text-review">▲</span>
+            <h2 className="font-display text-lg font-semibold">Needs your review</h2>
           </div>
-          <div className="lg:order-2">{reviewSection}</div>
-        </div>
+          <p className="mt-1 text-sm text-ink-soft">
+            We captured everything else with high confidence. Just confirm or fix these{" "}
+            {reviewRows.length === 1 ? "detail" : `${reviewRows.length} details`}.
+          </p>
+          <div className="mt-4 space-y-3">
+            {reviewRows.map((row) => (
+              <ReviewCard key={row.path} row={row} onDecision={onDecision} pending={pending} />
+            ))}
+          </div>
+        </section>
       ) : (
-        // Ready to quote: no review column, so Customer and Project sit side by side.
-        <>
-          <section className="card mt-6 border-l-[3px] border-l-commit p-4">
-            <div className="flex items-center gap-2">
-              <span aria-hidden className="text-commit">●</span>
-              <h2 className="font-display text-lg font-semibold">Ready to quote</h2>
-            </div>
-            <p className="mt-1 text-sm text-ink-soft">
-              Every detail was captured with high confidence — nothing needs your review.
-            </p>
-          </section>
-          <div className="mt-4 grid gap-4 lg:grid-cols-2">
-            {customerCard}
-            {projectCard}
+        <section ref={reviewRef} className="card mt-5 scroll-mt-28 border-l-[3px] border-l-commit p-4">
+          <div className="flex items-center gap-2">
+            <span aria-hidden className="text-commit">●</span>
+            <h2 className="font-display text-lg font-semibold">Ready to quote</h2>
           </div>
-        </>
+          <p className="mt-1 text-sm text-ink-soft">
+            Every detail was captured with high confidence — nothing needs your review. You can
+            still preview the original lead any time.
+          </p>
+        </section>
       )}
 
+      {/* the captured record */}
+      <section ref={capturedRef} className="mt-8 scroll-mt-28">
+      <h2 className="font-display text-lg font-semibold">Captured details</h2>
+      <div className="mt-3 grid gap-4 lg:grid-cols-2">
+        <RecordCard title="Customer">
+          <SalesField label="Company" path="customer.company_name" field={c.company_name} flaggedSet={flaggedSet} />
+          <SalesField label="Customer type" path="customer.customer_type" field={c.customer_type} flaggedSet={flaggedSet} format={(v) => humanize(v as string)} />
+          <SalesField label="Contact" path="customer.primary_contact.full_name" field={contact.full_name} flaggedSet={flaggedSet} />
+          <SalesField label="Email" path="customer.primary_contact.email" field={contact.email} flaggedSet={flaggedSet} />
+          <SalesField label="Phone" path="customer.primary_contact.phone" field={contact.phone} flaggedSet={flaggedSet} />
+          <PlainRow label="Billing" value={cityState(c.billing_city.value, c.billing_state.value)} />
+        </RecordCard>
+
+        <RecordCard title="Project">
+          <PlainRow label="Site" value={cityState(p.site_city.value, p.site_state.value)} />
+          <SalesField label="Requested delivery" path="project.requested_delivery" field={p.requested_delivery} flaggedSet={flaggedSet} format={(v) => formatDate(v as string)} />
+          <SalesField label="Quote deadline" path="project.quote_deadline" field={p.quote_deadline} flaggedSet={flaggedSet} format={(v) => formatDate(v as string)} />
+          <PlainRow label="Budget" value={budgetRange(p.budget_low.value, p.budget_high.value)} />
+          <SalesField label="Install required" path="project.install_required" field={p.install_required} flaggedSet={flaggedSet} />
+        </RecordCard>
+      </div>
+
       {/* line items as product cards */}
-      <section className="mt-6">
+      <div className="mt-6">
         <div className="flex items-baseline gap-2">
-          <h2 className="font-display text-lg font-semibold">What they want</h2>
+          <h3 className="font-display text-base font-semibold">What they want</h3>
           <span className="font-mono text-2xs text-ink-faint">
             {lead.line_items.length} item{lead.line_items.length === 1 ? "" : "s"}
           </span>
@@ -182,7 +196,10 @@ export default function SalesLeadView({
             ))}
           </div>
         )}
+      </div>
       </section>
+
+      <SourcePreview lead={lead} open={showSource} onClose={() => setShowSource(false)} />
     </div>
   );
 }

@@ -85,6 +85,13 @@ export const api = {
     }),
 };
 
+// URL for the raw original artifact (the ingested email/PDF/etc.). The backend
+// route that streams these is being built; the "Preview original" drawer calls
+// this and degrades gracefully until it exists. Change here if the shape differs.
+export function artifactUrl(leadId: string, filename: string): string {
+  return `${BASE}/leads/${encodeURIComponent(leadId)}/artifacts/${encodeURIComponent(filename)}`;
+}
+
 // The corpus lead ids (from src/corpus/specs.py). The manifest isn't exposed
 // over HTTP, so the "simulate inbox" control offers these directly.
 export const CORPUS_LEAD_IDS = [
