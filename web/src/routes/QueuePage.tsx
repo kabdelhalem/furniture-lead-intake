@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, CORPUS_LEAD_IDS } from "../api";
 import type { LeadSummary } from "../types";
-import { formatPct, relativeReceived } from "../lib/format";
+import { relativeReceived } from "../lib/format";
 import {
   ErrorNote,
   PriorityMeter,
@@ -16,7 +16,7 @@ import { Tooltip } from "../components/Tooltip";
 
 type Filter = "all" | "queue" | "approved";
 
-type SortKey = "company" | "segment" | "priority" | "autocommit" | "status";
+type SortKey = "company" | "segment" | "priority" | "flags" | "status";
 type Dir = "asc" | "desc";
 
 // A newly-picked column starts in its most useful direction.
@@ -24,7 +24,7 @@ const DEFAULT_DIR: Record<SortKey, Dir> = {
   company: "asc",
   segment: "desc",
   priority: "desc",
-  autocommit: "desc",
+  flags: "desc",
   status: "asc",
 };
 
@@ -58,8 +58,8 @@ function compare(a: LeadSummary, b: LeadSummary, key: SortKey): number {
       return (SEGMENT_RANK[a.segment] ?? -1) - (SEGMENT_RANK[b.segment] ?? -1);
     case "priority":
       return a.priority_score - b.priority_score;
-    case "autocommit":
-      return a.auto_commit_rate - b.auto_commit_rate;
+    case "flags":
+      return a.flagged_count - b.flagged_count;
     case "status":
       return (STATUS_RANK[a.review_status] ?? 9) - (STATUS_RANK[b.review_status] ?? 9);
   }
@@ -239,11 +239,11 @@ export default function QueuePage() {
               tip="How soon to work this lead (0–100), set by deterministic routing rules — deal-size segment, deadline urgency, order value, and territory. Higher means work it sooner."
             />
             <SortHeader
-              k="autocommit"
-              label="Auto-commit"
+              k="flags"
+              label="Flags"
               sort={sort}
               onSort={toggleSort}
-              tip="Share of this lead's fields captured with high confidence — no human needed. The rest are flagged for review."
+              tip="How many fields on this lead still need a human. 'All clear' means the system captured everything with high confidence."
             />
             <SortHeader k="status" label="Status" sort={sort} onSort={toggleSort} align="right" />
           </li>
@@ -341,7 +341,6 @@ function QueueRow({ lead, onOpen }: { lead: LeadSummary; onOpen: () => void }) {
               <span aria-hidden>●</span> all clear
             </span>
           )}
-          <span className="font-mono text-2xs text-ink-faint">{formatPct(lead.auto_commit_rate)} auto</span>
         </div>
 
         <div className="flex items-center justify-between gap-2 md:justify-end">

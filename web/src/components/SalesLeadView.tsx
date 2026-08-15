@@ -66,6 +66,46 @@ export default function SalesLeadView({
   const c = lead.customer;
   const p = lead.project;
   const contact = c.primary_contact;
+  const needsReview = reviewRows.length > 0;
+
+  const customerCard = (
+    <RecordCard title="Customer">
+      <SalesField label="Company" path="customer.company_name" field={c.company_name} flaggedSet={flaggedSet} />
+      <SalesField label="Customer type" path="customer.customer_type" field={c.customer_type} flaggedSet={flaggedSet} format={(v) => humanize(v as string)} />
+      <SalesField label="Contact" path="customer.primary_contact.full_name" field={contact.full_name} flaggedSet={flaggedSet} />
+      <SalesField label="Email" path="customer.primary_contact.email" field={contact.email} flaggedSet={flaggedSet} />
+      <SalesField label="Phone" path="customer.primary_contact.phone" field={contact.phone} flaggedSet={flaggedSet} />
+      <PlainRow label="Billing" value={cityState(c.billing_city.value, c.billing_state.value)} />
+    </RecordCard>
+  );
+
+  const projectCard = (
+    <RecordCard title="Project">
+      <PlainRow label="Site" value={cityState(p.site_city.value, p.site_state.value)} />
+      <SalesField label="Requested delivery" path="project.requested_delivery" field={p.requested_delivery} flaggedSet={flaggedSet} format={(v) => formatDate(v as string)} />
+      <SalesField label="Quote deadline" path="project.quote_deadline" field={p.quote_deadline} flaggedSet={flaggedSet} format={(v) => formatDate(v as string)} />
+      <PlainRow label="Budget" value={budgetRange(p.budget_low.value, p.budget_high.value)} />
+      <SalesField label="Install required" path="project.install_required" field={p.install_required} flaggedSet={flaggedSet} />
+    </RecordCard>
+  );
+
+  const reviewSection = (
+    <section className="card border-l-[3px] border-l-review p-4">
+      <div className="flex items-center gap-2">
+        <span aria-hidden className="text-review">▲</span>
+        <h2 className="font-display text-lg font-semibold">Needs your review</h2>
+      </div>
+      <p className="mt-1 text-sm text-ink-soft">
+        We captured everything else with high confidence. Just confirm or fix these{" "}
+        {reviewRows.length === 1 ? "detail" : `${reviewRows.length} details`}.
+      </p>
+      <div className="mt-4 space-y-3">
+        {reviewRows.map((row) => (
+          <ReviewCard key={row.path} row={row} onDecision={onDecision} pending={pending} />
+        ))}
+      </div>
+    </section>
+  );
 
   return (
     <div className="animate-rise-in">
@@ -95,54 +135,35 @@ export default function SalesLeadView({
         <ReadyPill count={reviewRows.length} />
       </div>
 
-      {/* review band */}
-      {reviewRows.length > 0 ? (
-        <section className="card mt-6 border-l-[3px] border-l-review p-4">
-          <div className="flex items-center gap-2">
-            <span aria-hidden className="text-review">▲</span>
-            <h2 className="font-display text-lg font-semibold">Needs your review</h2>
+      {needsReview ? (
+        // Needs review: the record (Customer over Project) on the left, the
+        // review column on the right; on mobile they stack record-then-review.
+        // Line items sit full-width below.
+        <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] lg:items-start">
+          <div className="flex flex-col gap-4 lg:order-1">
+            {customerCard}
+            {projectCard}
           </div>
-          <p className="mt-1 text-sm text-ink-soft">
-            We captured everything else with high confidence. Just confirm or fix these{" "}
-            {reviewRows.length === 1 ? "detail" : `${reviewRows.length} details`}.
-          </p>
-          <div className="mt-4 space-y-3">
-            {reviewRows.map((row) => (
-              <ReviewCard key={row.path} row={row} onDecision={onDecision} pending={pending} />
-            ))}
-          </div>
-        </section>
+          <div className="lg:order-2">{reviewSection}</div>
+        </div>
       ) : (
-        <section className="card mt-6 border-l-[3px] border-l-commit p-4">
-          <div className="flex items-center gap-2">
-            <span aria-hidden className="text-commit">●</span>
-            <h2 className="font-display text-lg font-semibold">Ready to quote</h2>
+        // Ready to quote: no review column, so Customer and Project sit side by side.
+        <>
+          <section className="card mt-6 border-l-[3px] border-l-commit p-4">
+            <div className="flex items-center gap-2">
+              <span aria-hidden className="text-commit">●</span>
+              <h2 className="font-display text-lg font-semibold">Ready to quote</h2>
+            </div>
+            <p className="mt-1 text-sm text-ink-soft">
+              Every detail was captured with high confidence — nothing needs your review.
+            </p>
+          </section>
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            {customerCard}
+            {projectCard}
           </div>
-          <p className="mt-1 text-sm text-ink-soft">
-            Every detail was captured with high confidence — nothing needs your review.
-          </p>
-        </section>
+        </>
       )}
-
-      {/* the captured record */}
-      <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        <RecordCard title="Customer">
-          <SalesField label="Company" path="customer.company_name" field={c.company_name} flaggedSet={flaggedSet} />
-          <SalesField label="Customer type" path="customer.customer_type" field={c.customer_type} flaggedSet={flaggedSet} format={(v) => humanize(v as string)} />
-          <SalesField label="Contact" path="customer.primary_contact.full_name" field={contact.full_name} flaggedSet={flaggedSet} />
-          <SalesField label="Email" path="customer.primary_contact.email" field={contact.email} flaggedSet={flaggedSet} />
-          <SalesField label="Phone" path="customer.primary_contact.phone" field={contact.phone} flaggedSet={flaggedSet} />
-          <PlainRow label="Billing" value={cityState(c.billing_city.value, c.billing_state.value)} />
-        </RecordCard>
-
-        <RecordCard title="Project">
-          <PlainRow label="Site" value={cityState(p.site_city.value, p.site_state.value)} />
-          <SalesField label="Requested delivery" path="project.requested_delivery" field={p.requested_delivery} flaggedSet={flaggedSet} format={(v) => formatDate(v as string)} />
-          <SalesField label="Quote deadline" path="project.quote_deadline" field={p.quote_deadline} flaggedSet={flaggedSet} format={(v) => formatDate(v as string)} />
-          <PlainRow label="Budget" value={budgetRange(p.budget_low.value, p.budget_high.value)} />
-          <SalesField label="Install required" path="project.install_required" field={p.install_required} flaggedSet={flaggedSet} />
-        </RecordCard>
-      </div>
 
       {/* line items as product cards */}
       <section className="mt-6">
