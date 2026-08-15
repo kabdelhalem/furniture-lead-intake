@@ -10,7 +10,7 @@ SEVERE, the alarm floor.
 
 from __future__ import annotations
 
-from src.confidence import Signals, score
+from src.confidence import Signals, explain, score
 from src.schema import Confidence, threshold_for
 
 
@@ -138,3 +138,22 @@ def test_scores_are_levels_and_deterministic():
 def test_index_insensitive_path():
     s = Signals(match_score=0.85)
     assert score("line_items[0].matched_sku", s) == score("line_items[3].matched_sku", s)
+
+
+# --------------------------------------------------------------------------
+# explain() — plain-English "why flagged"
+# --------------------------------------------------------------------------
+
+def test_explain_names_the_deterministic_reason():
+    assert "not stated" in explain("customer.company_name", Signals(present=False))
+    assert "ambiguous" in explain("line_items[0].matched_sku", Signals(ambiguous=True))
+    assert "between two nominal" in explain("line_items[0].matched_sku",
+                                            Signals(off_nominal=True, match_score=0.65))
+    assert "hedged" in explain("line_items[0].quantity", Signals(hedged=True))
+    assert "disagree" in explain("line_items[0].finish", Signals(cross_artifact="conflict"))
+    assert "valid email" in explain("customer.primary_contact.email", Signals(regex_valid=False))
+    assert "parse" in explain("project.requested_delivery", Signals(normalized_ok=False))
+
+def test_explain_returns_none_for_clean_fields():
+    assert explain("customer.company_name", Signals(model_level=Confidence.HIGH)) is None
+    assert explain("line_items[0].matched_sku", Signals(match_score=0.9)) is None

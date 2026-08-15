@@ -153,3 +153,20 @@ def test_artifact_raw_serves_the_original_file(client):
 
 def test_artifact_raw_404_for_unknown(client):
     assert client.get("/artifacts/nope::nope.pdf/raw").status_code == 404
+
+
+def test_observability_reflects_reviews(tmp_path_factory):
+    cdir = tmp_path_factory.mktemp("corpus")
+    from src.corpus.generate import generate
+    generate(cdir, synthetic=0)
+    c = TestClient(create_app(engine=init_db("sqlite://"), corpus_dir=cdir))
+    c.post("/simulate-inbox", json={"lead_id": "L007"})     # ambiguous SKU -> flagged
+    # Empty until a human acts.
+    assert c.get("/observability").json()["reviewed_fields"] == 0
+    c.post("/leads/L007/review", json={"decisions": [{
+        "field_path": "line_items[0].matched_sku", "new_value": "MER-CT-120",
+        "reviewer": "kareem", "reason_code": "wrong_sku"}]})
+    obs = c.get("/observability").json()
+    assert obs["corrections"] >= 1
+    assert "wrong_sku" in obs["reason_codes"]
+    assert "line_items[].matched_sku" in obs["by_field_class"]

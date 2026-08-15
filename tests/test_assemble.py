@@ -207,3 +207,25 @@ def test_every_present_value_carries_evidence():
     # The company name was located; its envelope must carry an evidence locator.
     assert lead.customer.company_name.evidence
     assert lead.customer.company_name.evidence[0].locator == "body line 4"
+
+
+def test_flagged_fields_explain_why():
+    # L008 off-nominal SKU carries a plain-English reason.
+    extraction = ExtractionResult(
+        is_lead=EField(value="true", certainty="high"),
+        line_items=[ELineItem(
+            raw_description="Height-adjustable desk, laminate, white",
+            quantity=EField(value="32", certainty="high"),
+            dimensions=EDimensions(width=EField(value="1800mm", certainty="high")),
+        )],
+    )
+    lead = _assemble(extraction, lead_id="L008")
+    assert "between two nominal" in (lead.line_items[0].matched_sku.note or "")
+
+    # A missing quantity (L011) explains itself as not stated.
+    extraction2 = ExtractionResult(
+        is_lead=EField(value="true", certainty="high"),
+        line_items=[ELineItem(raw_description="Verano meeting pod, 4 person, slate")],
+    )
+    lead2 = _assemble(extraction2, lead_id="L011")
+    assert "not stated" in (lead2.line_items[0].quantity.note or "")
