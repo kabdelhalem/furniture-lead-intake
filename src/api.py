@@ -26,6 +26,7 @@ from . import schema, store
 from .dedup import fingerprint, mark_duplicate, mark_duplicates
 from .ingest import ingest_file
 from .llm import LLM
+from .observability import summarize
 from .pipeline import apply_corrections
 from .run_corpus import DEMO_RECEIVED, ingest_lead
 from .schema import Correction, ReviewStatus, apply_policy
@@ -150,6 +151,15 @@ def create_app(
         summaries = store.list_leads(engine, status=None)
         leads = [store.get_lead(engine, s.lead_id) for s in summaries]
         return _dashboard([l for l in leads if l is not None])
+
+    # ---- calibration observability from review outcomes -------------------
+    @app.get("/observability")
+    def observability() -> dict:
+        """Per-field-class calibration signal from human review: false
+        auto-commits (tighten) and over-flags (loosen)."""
+        summaries = store.list_leads(engine, status=None)
+        leads = [store.get_lead(engine, s.lead_id) for s in summaries]
+        return summarize([l for l in leads if l is not None])
 
     # ---- threshold sliders ------------------------------------------------
     @app.get("/thresholds")
