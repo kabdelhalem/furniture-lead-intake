@@ -40,5 +40,7 @@ build: install corpus build-web
 # Single-origin production server: API under /api, the built SPA at /.
 # Seeds the corpus on startup (replays the committed cache — no API key needed).
 # Bind localhost; put a reverse proxy (Caddy / Cloudflare Tunnel) in front for TLS.
+# Override the port to avoid colliding with other services: make serve-prod PORT=8012
+PORT ?= 8000
 serve-prod:
-	uvicorn --factory src.api:create_site_app --host 127.0.0.1 --port 8000
+	uvicorn --factory src.api:create_site_app --host 127.0.0.1 --port $(PORT)
