@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
@@ -9,6 +9,7 @@ import { REVIEWER } from "../lib/reviewer";
 import { formatMoney, humanize, relativeReceived, segmentLabel } from "../lib/format";
 import FieldRow from "../components/FieldRow";
 import SalesLeadView from "../components/SalesLeadView";
+import SourceCompare from "../components/SourceCompare";
 import { InfoDot } from "../components/Tooltip";
 import { ErrorNote, ReviewStatusBadge, SegmentBadge, Spinner } from "../components/ui";
 import { useToast } from "../components/Toast";
@@ -106,6 +107,7 @@ function LeadDetail({
   const groups = coreGroups(lead, thresholds);
   const committed = lead.metrics.fields_auto_committed;
   const total = lead.metrics.fields_total;
+  const [showSource, setShowSource] = useState(false);
 
   return (
     <div className="animate-rise-in">
@@ -134,9 +136,17 @@ function LeadDetail({
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowSource(true)}
+            className="inline-flex items-center gap-1.5 rounded-full border border-line-strong bg-panel px-3.5 py-1.5 text-sm font-medium text-ink-soft shadow-panel transition-colors hover:bg-panel-2"
+          >
+            <span aria-hidden>⧉</span> Compare with source
+          </button>
           <SegmentBadge segment={lead.routing.segment} />
         </div>
       </div>
+
+      <SourceCompare lead={lead} open={showSource} onClose={() => setShowSource(false)} />
 
       {/* summary strip */}
       <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">

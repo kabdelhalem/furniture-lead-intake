@@ -176,6 +176,29 @@ export interface SeedResult {
   skipped: string[];
 }
 
+// GET /leads/{id}/source — the ingested view of each artifact.
+export type ArtifactKindStr =
+  | "email"
+  | "pdf_text"
+  | "pdf_scanned"
+  | "xlsx"
+  | "dxf"
+  | "transcript";
+
+export interface SourceBlock {
+  locator: string; // "Takeoff!C14", "body line 7", "page 2"
+  text: string;
+}
+
+export interface SourceDoc {
+  artifact_id: string; // "L007::L007.eml"
+  kind: ArtifactKindStr;
+  filename: string;
+  needs_ocr: boolean; // scanned fax: no text layer, went to the vision model
+  text: string; // linearized parsed text ("" when needs_ocr)
+  blocks: SourceBlock[];
+}
+
 export interface ReviewResult {
   lead_id: string;
   status: string;

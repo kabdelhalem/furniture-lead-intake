@@ -5,7 +5,7 @@ import type { FieldRow as FieldRowT } from "../lib/fields";
 import { coreGroups, lineItemRows } from "../lib/fields";
 import { formatDate, formatMoney, formatValue, humanize, relativeReceived, segmentLabel } from "../lib/format";
 import CorrectionForm, { skuAlternatives } from "./CorrectionForm";
-import SourcePreview from "./SourcePreview";
+import SourceCompare from "./SourceCompare";
 
 // Sales-facing names for a few fields whose engineering labels read wrong to a
 // salesperson. Everything else falls back to the row's own label.
@@ -123,7 +123,7 @@ export default function SalesLeadView({
           onClick={() => setShowSource(true)}
           className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-ink px-3.5 py-1 text-sm font-medium text-panel transition-colors hover:bg-brand-deep"
         >
-          <span aria-hidden>⧉</span> Preview original
+          <span aria-hidden>⧉</span> Compare with source
         </button>
       </div>
 
@@ -199,7 +199,7 @@ export default function SalesLeadView({
       </div>
       </section>
 
-      <SourcePreview lead={lead} open={showSource} onClose={() => setShowSource(false)} />
+      <SourceCompare lead={lead} open={showSource} onClose={() => setShowSource(false)} />
     </div>
   );
 }

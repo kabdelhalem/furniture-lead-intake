@@ -6,6 +6,7 @@ import type {
   ReviewDecision,
   ReviewResult,
   SeedResult,
+  SourceDoc,
   ThresholdResult,
 } from "./types";
 
@@ -74,6 +75,9 @@ export const api = {
 
   dashboard: () => request<Dashboard>("/dashboard"),
 
+  // The ingested view of a lead's artifacts: parsed text + located blocks.
+  source: (id: string) => request<SourceDoc[]>(`/leads/${id}/source`),
+
   thresholds: () => request<Record<string, ConfidenceLevel>>("/thresholds"),
 
   putThresholds: (
@@ -85,11 +89,11 @@ export const api = {
     }),
 };
 
-// URL for the raw original artifact (the ingested email/PDF/etc.). The backend
-// route that streams these is being built; the "Preview original" drawer calls
-// this and degrades gracefully until it exists. Change here if the shape differs.
-export function artifactUrl(leadId: string, filename: string): string {
-  return `${BASE}/leads/${encodeURIComponent(leadId)}/artifacts/${encodeURIComponent(filename)}`;
+// URL for the raw original artifact bytes (the ingested email/PDF/xlsx/…),
+// served with a real content-type for <iframe> embed / download. The artifact_id
+// looks like "L007::L007.eml" and must be percent-encoded in the path.
+export function artifactRawUrl(artifactId: string): string {
+  return `${BASE}/artifacts/${encodeURIComponent(artifactId)}/raw`;
 }
 
 // The corpus lead ids (from src/corpus/specs.py). The manifest isn't exposed
