@@ -25,3 +25,7 @@ test:
 clean:
 	rm -rf corpus .pytest_cache
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +
+
+# Run the API dev server (factory form; seed via POST /seed once up).
+serve:
+	uvicorn --factory src.api:create_app --reload
