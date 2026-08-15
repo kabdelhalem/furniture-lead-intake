@@ -91,17 +91,20 @@ replays offline with no API key.
 python -m venv .venv && source .venv/bin/activate
 make install          # dependencies
 make corpus           # generate the synthetic corpus from specs.py
-make test             # 220+ tests, all offline
+make test             # 250+ tests, all offline
 
 # Record model responses once (needs ANTHROPIC_API_KEY), then score offline:
 make record           # live calls -> writes cache/llm/  (commit it)
 make eval             # replays the cache, scores against ground truth
 ```
 
-`make eval` runs the pipeline over all 15 leads and prints field accuracy, a
-calibration pass-rate, the L011/L013 gates, and the run's token/cost total. It
-exits non-zero on a gate failure — a real CI-style check once the cache is
-recorded.
+The corpus is **105 leads**: 15 curated failure-mode leads that are the scored
+eval backbone, plus ~90 procedurally generated volume leads that make the review
+queue and dashboard feel like a real inbox (they run through the same pipeline
+but stay out of the headline accuracy number). `make eval` runs the whole corpus
+and prints field accuracy over the curated 15, a calibration pass-rate, the
+L011/L012/L013 gates, and the run's token/cost total. It exits non-zero on a gate
+failure — a real CI-style check once the cache is recorded.
 
 ## Three design decisions worth understanding
 
